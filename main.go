@@ -2,6 +2,7 @@ package main
 
 
 import (
+	"./bplustree"
 	"encoding/json"
 	"github.com/gorilla/mux"
 	"io/ioutil"
@@ -9,7 +10,7 @@ import (
 	"net/http"
 )
 
-var inMemoryDB = make(map[string]string)
+var db = bplustree.New(1, 3)
 
 type SetRequest struct {
 	Key string `json:"key"`
@@ -26,13 +27,14 @@ func main() {
 }
 
 func Get(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Handling get request: %v\n", r)
 	vars := mux.Vars(r)
 	key, ok := vars["key"]
 	if !ok {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	value, ok := inMemoryDB[key]
+	value, ok := db.Get(key)
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -45,6 +47,7 @@ func Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func Set(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Handling set request: %v\n", r)
 	bodyBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -63,7 +66,7 @@ func Set(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inMemoryDB[request.Key] = request.Value
+	db.Set(request.Key, request.Value)
 }
 
 
@@ -74,5 +77,5 @@ func Delete(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	delete(inMemoryDB, key)
+	db.Delete(key)
 }
