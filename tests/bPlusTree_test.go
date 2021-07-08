@@ -75,9 +75,6 @@ func Get_fiveValues(t *testing.T) {
 	if value5 != "-5" {
 		t.Errorf("expected 'key1', actual='%s'", value5)
 	}
-	if value5 != "-5" {
-		t.Errorf("expected 'key1', actual='%s'", value5)
-	}
 }
 
 
