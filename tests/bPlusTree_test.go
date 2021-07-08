@@ -8,7 +8,7 @@ import (
 const minDegree int = 1
 const maxBlockSize int = 3
 
-func Set_oneValue(t *testing.T) {
+func Get_oneValue(t *testing.T) {
 	// Arrange
 	var bPlusTree = bplustree.New(minDegree, maxBlockSize)
 
@@ -23,7 +23,7 @@ func Set_oneValue(t *testing.T) {
 	}
 }
 
-func Set_keyDoesNotExist(t *testing.T) {
+func Get_keyDoesNotExist(t *testing.T) {
 	// Arrange
 	var bPlusTree = bplustree.New(minDegree, maxBlockSize)
 
@@ -41,7 +41,7 @@ func Set_keyDoesNotExist(t *testing.T) {
 	}
 }
 
-func Set_fiveValues(t *testing.T) {
+func Get_fiveValues(t *testing.T) {
 	// Arrange
 	var bPlusTree = bplustree.New(minDegree, maxBlockSize)
 
@@ -81,7 +81,7 @@ func Set_fiveValues(t *testing.T) {
 }
 
 
-func Set_duplicateKeyDifferentValue(t *testing.T) {
+func Get_duplicateKeyDifferentValue(t *testing.T) {
 	// Arrange
 	var bPlusTree = bplustree.New(minDegree, maxBlockSize)
 
