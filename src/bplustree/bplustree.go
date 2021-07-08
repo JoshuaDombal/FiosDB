@@ -42,6 +42,6 @@ func (t *BPlusTree) Set(key, value string) {
 	}
 }
 
-func (t *BPlusTree) Delete(key string) {
-	t.root.Delete(key)
-}
+// func (t *BPlusTree) Delete(key string) {
+// 	t.root.Delete(key)
+// }

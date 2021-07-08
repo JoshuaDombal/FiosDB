@@ -21,7 +21,7 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/{key}", Get).Methods("GET")
 	r.HandleFunc("/", Set).Methods("POST")
-	r.HandleFunc("/{key}", Delete).Methods("DELETE")
+	// r.HandleFunc("/{key}", Delete).Methods("DELETE")
 
 	log.Fatal(http.ListenAndServe(":8080", r))
 }
@@ -70,12 +70,12 @@ func Set(w http.ResponseWriter, r *http.Request) {
 }
 
 
-func Delete(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	key, ok := vars["key"]
-	if !ok {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	db.Delete(key)
-}
+// func Delete(w http.ResponseWriter, r *http.Request) {
+// 	vars := mux.Vars(r)
+// 	key, ok := vars["key"]
+// 	if !ok {
+// 		w.WriteHeader(http.StatusBadRequest)
+// 		return
+// 	}
+// 	db.Delete(key)
+// }

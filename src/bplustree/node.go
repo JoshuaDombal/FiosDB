@@ -181,151 +181,165 @@ func (n *node) Set(key, value string) setResult {
 	}
 }
 
-func (n *node) Delete(key string) (string, *node) {
-	if n.isLeaf {
-		idx := n.search(key)
-		if n.keys[idx] == key {
-			for i := idx; i < len(n.keys) - 1; i++ {
-				n.keys[i] = n.keys[i + 1]
-				n.values[i] = n.values[i + 1]
-			}
-			n.num--
-		}
+// func (n *node) Delete(key string) (string, *node) {
+// 	if n.isLeaf {
+// 		idx := n.search(key)
+// 		if n.keys[idx] == key {
+// 			for i := idx; i < len(n.keys) - 1; i++ {
+// 				n.keys[i] = n.keys[i + 1]
+// 				n.values[i] = n.values[i + 1]
+// 			}
+// 			n.num--
+// 		}
 
-		if n.num < n.minDeg {
-			if n.rightSibling != nil && n.rightSibling.num > n.minDeg {
-				k, v := n.rightSibling.borrowSmallestFromLeaf()
-				n.keys = append(n.keys, k)
-				n.values = append(n.values, v)
-				return "BORROW", nil
-			} else if n.leftSibling != nil && n.leftSibling.num > n.minDeg {
-				k, v := n.leftSibling.borrowLargestFromLeaf()
-				n.keys = n.insertStringAt(n.keys, k, 0)
-				n.values = n.insertStringAt(n.values, v, 0)
-				return "BORROW", nil
-			} else if n.rightSibling != nil {
-				var keys []string
-				var values []string
-				for i, k := range n.keys {
-					keys = append(keys, k)
-					values = append(values, n.values[i])
-				}
-				for i, k := range n.rightSibling.keys {
-					keys = append(keys, k)
-					values = append(values, n.rightSibling.values[i])
-				}
-				newBlock := node{
-					isLeaf:       false,
-					minDeg:       n.minDeg,
-					num:          n.num + n.rightSibling.num,
-					maxBlockSize: n.maxBlockSize,
-					keys:         keys,
-					children:     nil,
-					values:       values,
-					leftSibling:  n.leftSibling,
-					rightSibling: n.rightSibling.rightSibling,
-				}
-				return "MERGE_RIGHT", &newBlock
-			} else {
-				var keys []string
-				var values []string
-				for i, k := range n.keys {
-					keys = append(keys, k)
-					values = append(values, n.values[i])
-				}
-				for i, k := range n.leftSibling.keys {
-					keys = append(keys, k)
-					values = append(values, n.leftSibling.values[i])
-				}
-				newBlock := node{
-					isLeaf:       false,
-					minDeg:       n.minDeg,
-					num:          n.num + n.leftSibling.num,
-					maxBlockSize: n.maxBlockSize,
-					keys:         keys,
-					children:     nil,
-					values:       values,
-					leftSibling:  n.leftSibling.leftSibling,
-					rightSibling: n.rightSibling,
-				}
-				return "MERGE_LEFT", &newBlock
-			}
-		} else {
-			return "", nil
-		}
-	} else {
-		idx := n.search(key)
-		var status string
-		var newBlock *node
-		if key >= n.keys[idx] {
-			status, newBlock = n.children[idx + 1].Delete(key)
-		} else {
-			status, newBlock = n.children[idx].Delete(key)
-		}
+// 		if n.num < n.minDeg {
+// 			if n.rightSibling != nil && n.rightSibling.num > n.minDeg {
+// 				k, v := n.rightSibling.borrowSmallestFromLeaf()
+// 				n.keys = append(n.keys, k)
+// 				n.values = append(n.values, v)
+// 				return "BORROW", nil
+// 			} else if n.leftSibling != nil && n.leftSibling.num > n.minDeg {
+// 				k, v := n.leftSibling.borrowLargestFromLeaf()
+// 				n.keys = n.insertStringAt(n.keys, k, 0)
+// 				n.values = n.insertStringAt(n.values, v, 0)
+// 				return "BORROW", nil
+// 			} else if n.rightSibling != nil {
+// 				var keys []string
+// 				var values []string
+// 				for i, k := range n.keys {
+// 					keys = append(keys, k)
+// 					values = append(values, n.values[i])
+// 				}
+// 				for i, k := range n.rightSibling.keys {
+// 					keys = append(keys, k)
+// 					values = append(values, n.rightSibling.values[i])
+// 				}
+// 				newBlock := node{
+// 					isLeaf:       false,
+// 					minDeg:       n.minDeg,
+// 					num:          n.num + n.rightSibling.num,
+// 					maxBlockSize: n.maxBlockSize,
+// 					keys:         keys,
+// 					children:     nil,
+// 					values:       values,
+// 					leftSibling:  n.leftSibling,
+// 					rightSibling: n.rightSibling.rightSibling,
+// 				}
+// 				return "MERGE_RIGHT", &newBlock
+// 			} else {
+// 				var keys []string
+// 				var values []string
+// 				for i, k := range n.keys {
+// 					keys = append(keys, k)
+// 					values = append(values, n.values[i])
+// 				}
+// 				for i, k := range n.leftSibling.keys {
+// 					keys = append(keys, k)
+// 					values = append(values, n.leftSibling.values[i])
+// 				}
+// 				newBlock := node{
+// 					isLeaf:       false,
+// 					minDeg:       n.minDeg,
+// 					num:          n.num + n.leftSibling.num,
+// 					maxBlockSize: n.maxBlockSize,
+// 					keys:         keys,
+// 					children:     nil,
+// 					values:       values,
+// 					leftSibling:  n.leftSibling.leftSibling,
+// 					rightSibling: n.rightSibling,
+// 				}
+// 				return "MERGE_LEFT", &newBlock
+// 			}
+// 		} else {
+// 			return "", nil
+// 		}
+// 	} else {
+// 		idx := n.search(key)
+// 		var status string
+// 		var newBlock *node
+// 		if key >= n.keys[idx] {
+// 			status, newBlock = n.children[idx + 1].Delete(key)
+// 		} else {
+// 			status, newBlock = n.children[idx].Delete(key)
+// 		}
 
-		if status == "BORROW" {
-			if key >= n.keys[idx] {
-				n.keys[idx] = n.children[idx + 1].smallest()
-			} else {
-				n.keys[idx] = n.children[idx].largest()
-			}
-			return "", nil
-		} else if status == "MERGE_RIGHT" {
-			if key >= n.keys[idx] {
-				n.keys = append(n.keys[:idx + 1], n.keys[idx + 2:]...)
-				n.children = append(append(n.children[:idx + 1], newBlock), n.children[idx + 3:]...)
-			} else {
-				n.keys = append(n.keys[:idx], n.keys[idx + 1:]...)
-				n.children = append(append(n.children[:idx], newBlock), n.children[idx + 2:]...)
-			}
-			n.num--
-		} else if status == "MERGE_LEFT" {
-			if key >= n.keys[idx] {
-				n.keys = append(n.keys[:idx], n.keys[idx + 1:]...)
-				n.children = append(append(n.children[:idx], newBlock), n.children[idx + 2:]...)
-			} else {
-				n.keys = append(n.keys[:idx - 1], n.keys[idx:]...)
-				n.children = append(append(n.children[:idx - 1], newBlock), n.children[idx + 1:]...)
-			}
-			n.num--
-		}
+// 		if status == "BORROW" {
+// 			if key >= n.keys[idx] {
+// 				n.keys[idx] = n.children[idx + 1].smallest()
+// 			} else {
+// 				n.keys[idx] = n.children[idx].largest()
+// 			}
+// 			return "", nil
+// 		} else if status == "MERGE_RIGHT" {
+// 			if key >= n.keys[idx] {
+// 				n.keys = append(n.keys[:idx + 1], n.keys[idx + 2:]...)
+// 				n.children = append(append(n.children[:idx + 1], newBlock), n.children[idx + 3:]...)
+// 			} else {
+// 				n.keys = append(n.keys[:idx], n.keys[idx + 1:]...)
+// 				n.children = append(append(n.children[:idx], newBlock), n.children[idx + 2:]...)
+// 			}
+// 			n.num--
+// 		} else if status == "MERGE_LEFT" {
+// 			if key >= n.keys[idx] {
+// 				n.keys = append(n.keys[:idx], n.keys[idx + 1:]...)
+// 				n.children = append(append(n.children[:idx], newBlock), n.children[idx + 2:]...)
+// 			} else {
+// 				n.keys = append(n.keys[:idx - 1], n.keys[idx:]...)
+// 				n.children = append(append(n.children[:idx - 1], newBlock), n.children[idx + 1:]...)
+// 			}
+// 			n.num--
+// 		}
 
-		if n.num < n.minDeg {
-			if n.rightSibling != nil && n.rightSibling.num > n.minDeg {
-				k, c := n.rightSibling.borrowSmallestFromInternal()
-				parentIdx := n.parent.search(key)
-				var newKey string
-				if k >= n.parent.keys[parentIdx] {
-					newKey = n.parent.keys[parentIdx]
-				} else {
-					newKey = n.parent.keys[parentIdx - 1]
-				}
-				n.keys = n.insertStringAt(n.keys, newKey, n.num)
-				n.children = n.insertNodeAt(n.children, c, n.num + 1)
-				n.parent.keys[parentIdx] = k
-			} else if n.leftSibling != nil && n.leftSibling.num > n.minDeg {
-				k, c := n.rightSibling.borrowLargestFromInternal()
-				parentIdx := n.parent.search(key)
-				var newKey string
-				if k >= n.parent.keys[parentIdx] {
-					newKey = n.parent.keys[parentIdx]
-				} else {
-					newKey = n.parent.keys[parentIdx - 1]
-				}
-				n.keys = n.insertStringAt(n.keys, newKey, 0)
-				n.children = n.insertNodeAt(n.children, c, 0)
-				n.parent.keys[parentIdx] = k
-			} else if n.leftSibling != nil {
-				// TODO:
-			} else if n.rightSibling != nil{
+// 		if n.num < n.minDeg {
+// 			if n.rightSibling != nil && n.rightSibling.num > n.minDeg {
+// 				k, c := n.rightSibling.borrowSmallestFromInternal()
+// 				parentIdx := n.parent.search(key)
+// 				var newKey string
+// 				if k >= n.parent.keys[parentIdx] {
+// 					newKey = n.parent.keys[parentIdx]
+// 				} else {
+// 					newKey = n.parent.keys[parentIdx - 1]
+// 				}
+// 				n.keys = n.insertStringAt(n.keys, newKey, n.num)
+// 				n.children = n.insertNodeAt(n.children, c, n.num + 1)
+// 				n.parent.keys[parentIdx] = k
+// 			} else if n.leftSibling != nil && n.leftSibling.num > n.minDeg {
+// 				k, c := n.rightSibling.borrowLargestFromInternal()
+// 				parentIdx := n.parent.search(key)
+// 				var newKey string
+// 				if k >= n.parent.keys[parentIdx] {
+// 					newKey = n.parent.keys[parentIdx]
+// 				} else {
+// 					newKey = n.parent.keys[parentIdx - 1]
+// 				}
+// 				n.keys = n.insertStringAt(n.keys, newKey, 0)
+// 				n.children = n.insertNodeAt(n.children, c, 0)
+// 				n.parent.keys[parentIdx] = k
+// 			} else if n.leftSibling != nil {
+// 				// TODO:
+// 			} else if n.rightSibling != nil{
 
-			}
-		}
+// 			}
+// 		}
 
-		// if this node contains the key, replace it with the smallest value of right subtree
+// 		// if this node contains the key, replace it with the smallest value of right subtree
 
-	}
-}
+
+
+// 		tempReturnNode := node{
+// 			isLeaf:   false,
+// 			minDeg:   n.minDeg,
+// 			maxBlockSize: n.maxBlockSize,
+// 			num:      len(rightKeys),
+// 			keys:     rightKeys,
+// 			children: rightChildren,
+// 			values:   nil,
+// 			leftSibling: &leftNode,
+// 			rightSibling: n.rightSibling,
+// 		}
+// 		return "tempReturn", &tempReturnNode
+// 	}
+// }
 
 func (n *node) smallest() string {
 	if n.isLeaf {
