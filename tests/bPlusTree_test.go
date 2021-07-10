@@ -5,12 +5,11 @@ import (
 	"testing"
 )
 
-const minDegree int = 1
-const maxBlockSize int = 3
+const capacity int = 3
 
 func Get_oneValue(t *testing.T) {
 	// Arrange
-	var bPlusTree = bplustree.New(minDegree, maxBlockSize)
+	var bPlusTree = bplustree.New(capacity)
 
 	bPlusTree.Set("key1", "5")
 
@@ -25,7 +24,7 @@ func Get_oneValue(t *testing.T) {
 
 func Get_keyDoesNotExist(t *testing.T) {
 	// Arrange
-	var bPlusTree = bplustree.New(minDegree, maxBlockSize)
+	var bPlusTree = bplustree.New(capacity)
 
 	bPlusTree.Set("key1", "5")
 
@@ -43,7 +42,7 @@ func Get_keyDoesNotExist(t *testing.T) {
 
 func Get_fiveValues(t *testing.T) {
 	// Arrange
-	var bPlusTree = bplustree.New(minDegree, maxBlockSize)
+	var bPlusTree = bplustree.New(capacity)
 
 	bPlusTree.Set("key1", "5")
 	bPlusTree.Set("key2", "10")
@@ -57,7 +56,6 @@ func Get_fiveValues(t *testing.T) {
 	value3, _ := bPlusTree.Get("key3")
 	value4, _ := bPlusTree.Get("key4")
 	value5, _ := bPlusTree.Get("key5")
-
 
 	// Assert
 	if value1 != "5" {
@@ -77,10 +75,9 @@ func Get_fiveValues(t *testing.T) {
 	}
 }
 
-
 func Get_duplicateKeyDifferentValue(t *testing.T) {
 	// Arrange
-	var bPlusTree = bplustree.New(minDegree, maxBlockSize)
+	var bPlusTree = bplustree.New(capacity)
 
 	bPlusTree.Set("key1", "5")
 	bPlusTree.Set("key1", "10")

@@ -1,6 +1,5 @@
 package main
 
-
 import (
 	"./bplustree"
 	"encoding/json"
@@ -10,10 +9,10 @@ import (
 	"net/http"
 )
 
-var db = bplustree.New(1, 3)
+var bPlusTree = bplustree.New(3)
 
 type SetRequest struct {
-	Key string `json:"key"`
+	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 
@@ -21,7 +20,7 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/{key}", Get).Methods("GET")
 	r.HandleFunc("/", Set).Methods("POST")
-	// r.HandleFunc("/{key}", Delete).Methods("DELETE")
+	r.HandleFunc("/{key}", Delete).Methods("DELETE")
 
 	log.Fatal(http.ListenAndServe(":8080", r))
 }
@@ -34,7 +33,7 @@ func Get(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	value, ok := db.Get(key)
+	value, ok := bPlusTree.Get(key)
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -66,16 +65,15 @@ func Set(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db.Set(request.Key, request.Value)
+	bPlusTree.Set(request.Key, request.Value)
 }
 
-
-// func Delete(w http.ResponseWriter, r *http.Request) {
-// 	vars := mux.Vars(r)
-// 	key, ok := vars["key"]
-// 	if !ok {
-// 		w.WriteHeader(http.StatusBadRequest)
-// 		return
-// 	}
-// 	db.Delete(key)
-// }
+func Delete(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	key, ok := vars["key"]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	bPlusTree.Delete(key)
+}
