@@ -30,7 +30,7 @@ func newInnerNode(keys []string, children []*node) *node {
 	return &node{
 		Keys:     keysCopied,
 		Children: childrenCopied,
-		IsLeaf: false,
+		IsLeaf:   false,
 	}
 }
 
@@ -81,7 +81,7 @@ func (n *node) deleteChild(idx int) {
 }
 
 func (n *node) canLend(capacity int) bool {
-	return len(n.Keys) > capacity / 2
+	return len(n.Keys) > capacity/2
 }
 
 func (n *node) getMinKey() string {
@@ -93,15 +93,15 @@ func (n *node) getMinKey() string {
 }
 
 func (n *node) removeMax() (string, string, *node) {
-	maxKey := n.Keys[len(n.Keys) - 1]
-	n.Keys = n.Keys[:len(n.Keys) - 1]
+	maxKey := n.Keys[len(n.Keys)-1]
+	n.Keys = n.Keys[:len(n.Keys)-1]
 	if n.IsLeaf {
-		value := n.Values[len(n.Values) - 1]
-		n.Values = n.Values[:len(n.Values) - 1]
+		value := n.Values[len(n.Values)-1]
+		n.Values = n.Values[:len(n.Values)-1]
 		return maxKey, value, nil
 	} else {
-		child := n.Children[len(n.Children) - 1]
-		n.Children = n.Children[:len(n.Children) - 1]
+		child := n.Children[len(n.Children)-1]
+		n.Children = n.Children[:len(n.Children)-1]
 		return maxKey, "", child
 	}
 }
