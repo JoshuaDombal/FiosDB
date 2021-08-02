@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-var bPlusTree = bplustree.New(3)
+var bPlusTree = bplustree.New("./data/db", 3, 64)
 
 type SetRequest struct {
 	Key   string `json:"key"`

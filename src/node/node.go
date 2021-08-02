@@ -1,6 +1,14 @@
-package bplustree
+package node
 
-func newLeafNode(keys []string, values []string) *node {
+type Node struct {
+	Keys     []string // Keys of nodes
+	Values   []string // values
+	Children []int64  // Children
+	PageNum  int64
+	IsLeaf   bool
+}
+
+func NewLeafNode(pageNum int64, keys []string, values []string) *Node {
 	keysCopied := make([]string, len(keys))
 	for idx, elt := range keys {
 		keysCopied[idx] = elt
@@ -10,38 +18,33 @@ func newLeafNode(keys []string, values []string) *node {
 		valuesCopied[idx] = elt
 	}
 
-	return &node{
-		Keys:   keysCopied,
-		Values: valuesCopied,
-		IsLeaf: true,
+	return &Node{
+		Keys:    keysCopied,
+		Values:  valuesCopied,
+		PageNum: pageNum,
+		IsLeaf:  true,
 	}
 }
 
-func newInnerNode(keys []string, children []*node) *node {
+func NewInnerNode(pageNum int64, keys []string, children []int64) *Node {
 	keysCopied := make([]string, len(keys))
 	for idx, elt := range keys {
 		keysCopied[idx] = elt
 	}
-	childrenCopied := make([]*node, len(children))
+	childrenCopied := make([]int64, len(children))
 	for idx, elt := range children {
 		childrenCopied[idx] = elt
 	}
 
-	return &node{
+	return &Node{
 		Keys:     keysCopied,
 		Children: childrenCopied,
+		PageNum:  pageNum,
 		IsLeaf:   false,
 	}
 }
 
-type node struct {
-	Keys     []string // Keys of nodes
-	Values   []string // values
-	Children []*node  // Children
-	IsLeaf   bool
-}
-
-func (n *node) insertKey(key string, idx int) {
+func (n *Node) InsertKey(key string, idx int) {
 	if idx == len(n.Keys) {
 		n.Keys = append(n.Keys, key)
 	} else {
@@ -50,7 +53,7 @@ func (n *node) insertKey(key string, idx int) {
 	}
 }
 
-func (n *node) insertValue(value string, idx int) {
+func (n *Node) InsertValue(value string, idx int) {
 	if idx == len(n.Values) {
 		n.Values = append(n.Values, value)
 	} else {
@@ -59,7 +62,7 @@ func (n *node) insertValue(value string, idx int) {
 	}
 }
 
-func (n *node) insertChild(child *node, idx int) {
+func (n *Node) InsertChild(child int64, idx int) {
 	if idx == len(n.Children) {
 		n.Children = append(n.Children, child)
 	} else {
@@ -68,37 +71,29 @@ func (n *node) insertChild(child *node, idx int) {
 	}
 }
 
-func (n *node) deleteKey(idx int) {
+func (n *Node) DeleteKey(idx int) {
 	n.Keys = append(n.Keys[0:idx], n.Keys[idx+1:]...)
 }
 
-func (n *node) deleteValue(idx int) {
+func (n *Node) DeleteValue(idx int) {
 	n.Values = append(n.Values[0:idx], n.Values[idx+1:]...)
 }
 
-func (n *node) deleteChild(idx int) {
+func (n *Node) DeleteChild(idx int) {
 	n.Children = append(n.Children[0:idx], n.Children[idx+1:]...)
 }
 
-func (n *node) canLend(capacity int) bool {
+func (n *Node) CanLend(capacity int) bool {
 	return len(n.Keys) > capacity/2
 }
 
-func (n *node) getMinKey() string {
-	if n.IsLeaf {
-		return n.Keys[0]
-	} else {
-		return n.Children[0].getMinKey()
-	}
-}
-
-func (n *node) removeMax() (string, string, *node) {
+func (n *Node) RemoveMax() (string, string, int64) {
 	maxKey := n.Keys[len(n.Keys)-1]
 	n.Keys = n.Keys[:len(n.Keys)-1]
 	if n.IsLeaf {
 		value := n.Values[len(n.Values)-1]
 		n.Values = n.Values[:len(n.Values)-1]
-		return maxKey, value, nil
+		return maxKey, value, -1
 	} else {
 		child := n.Children[len(n.Children)-1]
 		n.Children = n.Children[:len(n.Children)-1]
@@ -106,13 +101,13 @@ func (n *node) removeMax() (string, string, *node) {
 	}
 }
 
-func (n *node) removeMin() (string, string, *node) {
+func (n *Node) RemoveMin() (string, string, int64) {
 	minKeys := n.Keys[0]
 	n.Keys = n.Keys[1:]
 	if n.IsLeaf {
 		value := n.Values[0]
 		n.Values = n.Values[1:]
-		return minKeys, value, nil
+		return minKeys, value, -1
 	} else {
 		child := n.Children[0]
 		n.Children = n.Children[1:]
@@ -120,20 +115,20 @@ func (n *node) removeMin() (string, string, *node) {
 	}
 }
 
-func (n *node) acceptMaxFromLeftChild(key string, value string, child *node) {
-	n.insertKey(key, 0)
+func (n *Node) AcceptMaxFromLeftChild(key string, value string, child int64) {
+	n.InsertKey(key, 0)
 	if n.IsLeaf {
-		n.insertValue(value, 0)
+		n.InsertValue(value, 0)
 	} else {
-		n.insertChild(child, 0)
+		n.InsertChild(child, 0)
 	}
 }
 
-func (n *node) acceptMinFromRightChild(key string, value string, child *node) {
-	n.insertKey(key, len(n.Keys))
+func (n *Node) AcceptMinFromRightChild(key string, value string, child int64) {
+	n.InsertKey(key, len(n.Keys))
 	if n.IsLeaf {
-		n.insertValue(value, len(n.Keys))
+		n.InsertValue(value, len(n.Keys))
 	} else {
-		n.insertChild(child, len(n.Keys))
+		n.InsertChild(child, len(n.Keys))
 	}
 }
