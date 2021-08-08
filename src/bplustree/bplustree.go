@@ -3,7 +3,6 @@ package bplustree
 import (
 	"../bufferpoolmanager"
 	n "../node"
-	writeAheadLog "../wal"
 	"sync"
 )
 
@@ -16,21 +15,17 @@ type BPlusTree struct {
 }
 
 func New(fileName string, capacity, cacheSize int) BPlusTree {
-	wal := writeAheadLog.New(fileName + ".log")
-	bpm := bufferpoolmanager.New(fileName+".db", cacheSize, wal)
+	bpm := bufferpoolmanager.New(fileName, cacheSize)
 	return BPlusTree{
-		root: &n.Node{
-			Keys:   make([]string, 0),
-			Values: make([]string, 0),
-			IsLeaf: true,
-		},
+		rwLock: &sync.RWMutex{},
+		root: bpm.GetRoot(),
 		capacity: capacity,
 		bpm:      bpm,
 	}
 }
 
 func (t *BPlusTree) Get(key string) (string, bool) {
-	t.rwLock.RLocker()
+	t.rwLock.RLock()
 	defer t.rwLock.RUnlock()
 	return t.get(key, t.root)
 }
@@ -56,6 +51,8 @@ func (t *BPlusTree) Set(key, value string) {
 	if didSplit {
 		newRoot := n.NewInnerNode(t.bpm.GetFreePage(), []string{newKey}, []int64{t.root.PageNum, newNode.PageNum})
 		t.root = newRoot
+		t.bpm.Set(t.root)
+		t.bpm.SetRoot(t.root.PageNum)
 	}
 	t.bpm.Commit()
 }
@@ -65,6 +62,7 @@ func (t *BPlusTree) set(key string, value string, node *n.Node) (*n.Node, string
 		i, found := findKeyIndexInLeaf(key, node.Keys)
 		if found {
 			node.Values[i] = value
+			t.bpm.Set(node)
 			return nil, "", false
 		} else {
 			node.InsertKey(key, i)
@@ -109,7 +107,10 @@ func (t *BPlusTree) Delete(key string) {
 	defer t.rwLock.Unlock()
 	underCapacity := t.delete(key, t.root)
 	if underCapacity && !t.root.IsLeaf {
+		oldRootPageNumber := t.root.PageNum
 		t.root = t.bpm.Get(t.root.Children[0])
+		t.bpm.DeletePage(oldRootPageNumber)
+		t.bpm.SetRoot(t.root.PageNum)
 	}
 	t.bpm.Commit()
 }
@@ -165,7 +166,7 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 				node.DeleteChild(i)
 				t.bpm.Set(node)
 				t.bpm.Set(leftChild)
-				t.bpm.Set(rightChild)
+				t.bpm.DeletePage(rightChild.PageNum)
 			} else {
 				leftChild := t.bpm.Get(node.Children[i])
 				rightChild := t.bpm.Get(node.Children[i+1])
@@ -180,7 +181,7 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 				node.DeleteChild(i + 1)
 				t.bpm.Set(node)
 				t.bpm.Set(leftChild)
-				t.bpm.Set(rightChild)
+				t.bpm.DeletePage(rightChild.PageNum)
 			}
 		} else if i > 0 && node.Keys[i-1] == key {
 			node.Keys[i-1] = t.getMinKey(t.bpm.Get(node.Children[i]))

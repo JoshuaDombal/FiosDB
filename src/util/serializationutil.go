@@ -3,6 +3,7 @@ package util
 import (
 	c "../constants"
 	"encoding/binary"
+	"fmt"
 )
 
 func Int64ToBytes(i int64) []byte {
@@ -39,4 +40,26 @@ func ValueToBytes(value string) []byte {
 		valueAsBytes[idx] = keyByte
 	}
 	return valueAsBytes
+}
+
+func BytesToKey(keyAsBytes []byte) string {
+	idx := 0
+	for i, b := range keyAsBytes {
+		if b == 0 {
+			idx = i
+			break
+		}
+	}
+	return fmt.Sprintf("%s", keyAsBytes[:idx])
+}
+
+func BytesToValue(valueAsBytes []byte) string {
+	idx := 0
+	for i, b := range valueAsBytes {
+		if b == 0 {
+			idx = i
+			break
+		}
+	}
+	return fmt.Sprintf("%s", valueAsBytes[:idx])
 }

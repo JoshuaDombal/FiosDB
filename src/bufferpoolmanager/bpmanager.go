@@ -6,6 +6,7 @@ import (
 	"../util"
 	writeAheadLog "../wal"
 	"github.com/hashicorp/golang-lru"
+	"io"
 	"log"
 	"os"
 )
@@ -56,32 +57,65 @@ type BufferPoolManager struct {
 	freePageStart int64
 }
 
-func New(fileName string, cacheSize int, wal *writeAheadLog.WAL) *BufferPoolManager {
-	dbFile, err := os.OpenFile(fileName, os.O_RDWR, os.ModeAppend)
+func New(fileName string, cacheSize int) *BufferPoolManager {
+	dbFile, err := os.OpenFile(fileName + ".db", os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		log.Fatalf("Failure opening file")
 	}
+	wal := writeAheadLog.New(fileName + ".log")
 	cache, err := lru.New(cacheSize)
 	if err != nil {
 		log.Fatalf("Failure creating LRU cache")
 	}
 
-	return &BufferPoolManager{
+	bpm := &BufferPoolManager{
 		cache:  cache,
 		dbFile: dbFile,
 		wal:    wal,
 	}
-}
 
-func (bpm *BufferPoolManager) Recover() {
-	// Read pages from WAL
-	committedFrames := bpm.wal.Recover()
-	for frame := range committedFrames {
-		bpm.setPage(frame.PageNum, frame.Data)
+	hadCommittedFrames := false
+	if wal.NeedsRecovery() {
+		hadCommittedFrames = bpm.Checkpoint()
 	}
 
-	// Read metadata
-	bpm.readMetadata()
+	if hadCommittedFrames {
+		// Read metadata.
+		bpm.readMetadata()
+	} else {
+		// if no frames were committed then the metadata page was not committed either
+		bpm.setMetadata(1, -1)
+		bpm.Set(&n.Node{
+			Keys:    make([]string, 0),
+			Values:  make([]string, 0),
+			IsLeaf:  true,
+			PageNum: bpm.GetFreePage(),
+		})
+	}
+
+	return bpm
+}
+
+func (bpm *BufferPoolManager) Checkpoint() bool {
+	committedFrames := bpm.wal.RecoverAllCommittedFrames()
+	hadCommittedFrames := false
+	for frame := range committedFrames {
+		hadCommittedFrames = true
+		_, err := bpm.dbFile.WriteAt(frame.Data, frame.PageNum * c.PageSize)
+		if err != nil {
+			log.Fatalf("Failure writing dbFile")
+		}
+	}
+	bpm.wal.Clear()
+	return hadCommittedFrames
+}
+
+func (bpm *BufferPoolManager) SetRoot(pageNum int64) {
+	bpm.setMetadata(pageNum, bpm.freePageStart)
+}
+
+func (bpm *BufferPoolManager) GetRoot() *n.Node {
+	return bpm.Get(bpm.rootPageNum)
 }
 
 func (bpm *BufferPoolManager) Get(pageNum int64) *n.Node {
@@ -97,7 +131,7 @@ func (bpm *BufferPoolManager) Get(pageNum int64) *n.Node {
 	keyBytes := nodeBytes[c.PageTypeSize+c.KeyCountSize : c.PageTypeSize+c.KeyCountSize+c.KeySize*numKeys]
 	var i int16
 	for i = 0; i < numKeys; i++ {
-		keys[i] = string(keyBytes[c.KeySize*i : c.KeySize*(i+1)])
+		keys[i] = util.BytesToKey(keyBytes[c.KeySize*i : c.KeySize*(i+1)])
 	}
 
 	if pageType == INTERNAL {
@@ -118,8 +152,8 @@ func (bpm *BufferPoolManager) Get(pageNum int64) *n.Node {
 		values := make([]string, numKeys)
 		valueBytes := nodeBytes[c.PageTypeSize+c.KeyCountSize+c.KeySize*numKeys : c.PageTypeSize+c.KeyCountSize+c.KeySize*numKeys+c.ValueSize*numKeys]
 		var i int16
-		for i = 0; i < numKeys+1; i++ {
-			values[i] = string(valueBytes[c.ValueSize*i : c.ValueSize*(i+1)])
+		for i = 0; i < numKeys; i++ {
+			values[i] = util.BytesToValue(valueBytes[c.ValueSize*i : c.ValueSize*(i+1)])
 		}
 
 		return &n.Node{
@@ -180,6 +214,8 @@ func (bpm *BufferPoolManager) Set(node *n.Node) {
 		}
 	}
 
+	data = append(data, make([]byte, c.PageSize - len(data))...)
+
 	bpm.setPage(node.PageNum, data)
 }
 
@@ -194,21 +230,21 @@ func (bpm *BufferPoolManager) setPage(pageNum int64, data []byte) {
 }
 
 func (bpm *BufferPoolManager) DeletePage(pageNum int64) {
-	bpm.wal.AddFrame(writeAheadLog.Frame{
-		FrameType: writeAheadLog.DELETE,
-		PageNum:   pageNum,
-	})
-
 	bpm.cache.Remove(pageNum)
 
 	pageBytes := make([]byte, c.PageSize)
 	for idx, pageTypeByte := range util.Int16ToBytes(int16(FREE)) {
 		pageBytes[idx] = pageTypeByte
 	}
-	for idx, nexPageByte := range util.Int64ToBytes(bpm.freePageStart) {
-		pageBytes[idx+c.PageTypeSize] = nexPageByte
+	for idx, nextPageByte := range util.Int64ToBytes(bpm.freePageStart) {
+		pageBytes[idx+c.PageTypeSize] = nextPageByte
 	}
 
+	bpm.wal.AddFrame(writeAheadLog.Frame{
+		FrameType: writeAheadLog.PUT,
+		PageNum:   pageNum,
+		Data: pageBytes,
+	})
 	bpm.setPage(pageNum, pageBytes)
 	bpm.setMetadata(bpm.rootPageNum, pageNum)
 }
@@ -221,13 +257,27 @@ func (bpm *BufferPoolManager) Commit() {
 
 func (bpm *BufferPoolManager) GetFreePage() int64 {
 	if bpm.freePageStart <= 0 {
-		offset, err := bpm.dbFile.Seek(0, 2)
+		offset, err := bpm.dbFile.Seek(0, io.SeekEnd)
 		if err != nil {
 			log.Fatalf("Seek failed")
 		}
-		if offset%c.PageSize != 0 {
+		if offset == 0 {
+			// extend the file
+			_, err = bpm.dbFile.Write(make([]byte, c.PageSize))
+			if err != nil {
+				log.Fatalf("Extending file failed")
+			}
+			offset += c.PageSize
+		}
+ 		if offset%c.PageSize != 0 {
 			log.Fatalf("DBFile size is not a multiple of page size")
 		}
+		// extend the file
+		_, err = bpm.dbFile.Write(make([]byte, c.PageSize))
+		if err != nil {
+			log.Fatalf("Extending file failed")
+		}
+
 		return offset / c.PageSize
 	}
 
@@ -239,6 +289,7 @@ func (bpm *BufferPoolManager) GetFreePage() int64 {
 		return -1
 	} else {
 		bpm.freePageStart = util.BytesToInt64(pageBytes[c.PageTypeSize : c.PageTypeSize+c.PageRefSize])
+		log.Printf("Free page num: %d\n", freePageNum)
 		return freePageNum
 	}
 }

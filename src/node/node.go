@@ -127,8 +127,8 @@ func (n *Node) AcceptMaxFromLeftChild(key string, value string, child int64) {
 func (n *Node) AcceptMinFromRightChild(key string, value string, child int64) {
 	n.InsertKey(key, len(n.Keys))
 	if n.IsLeaf {
-		n.InsertValue(value, len(n.Keys))
+		n.InsertValue(value, len(n.Values))
 	} else {
-		n.InsertChild(child, len(n.Keys))
+		n.InsertChild(child, len(n.Children))
 	}
 }

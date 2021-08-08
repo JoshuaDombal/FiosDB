@@ -26,13 +26,13 @@ func main() {
 }
 
 func Get(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Handling get request: %v\n", r)
 	vars := mux.Vars(r)
 	key, ok := vars["key"]
 	if !ok {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	log.Printf("Handling get request for key: %s\n", key)
 	value, ok := bPlusTree.Get(key)
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
@@ -46,7 +46,6 @@ func Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func Set(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Handling set request: %v\n", r)
 	bodyBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -60,6 +59,7 @@ func Set(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Handling set request for key: %s, value: %s\n", request.Key, request.Value)
 	if request.Key == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -75,5 +75,6 @@ func Delete(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	log.Printf("Handling delete request for key: %s\n", key)
 	bPlusTree.Delete(key)
 }
