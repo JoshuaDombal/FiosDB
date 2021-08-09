@@ -3,7 +3,7 @@ package bufferpoolmanager
 import (
 	c "../constants"
 	n "../node"
-	"../util"
+	"../serializer"
 	writeAheadLog "../wal"
 	"github.com/hashicorp/golang-lru"
 	"io"
@@ -74,40 +74,38 @@ func New(fileName string, cacheSize int) *BufferPoolManager {
 		wal:    wal,
 	}
 
-	hadCommittedFrames := false
 	if wal.NeedsRecovery() {
-		hadCommittedFrames = bpm.Checkpoint()
+		log.Printf("checkpointing...")
+		bpm.Checkpoint()
+		log.Printf("finished checkpointing")
 	}
 
-	if hadCommittedFrames {
-		// Read metadata.
+	if fi, _ := bpm.dbFile.Stat(); fi.Size() > c.PageSize {
+		// Successful initialization requires setting up both the metadata page and the root page. This seems like a bit
+		// of a hack. maybe we can clean this up
 		bpm.readMetadata()
 	} else {
-		// if no frames were committed then the metadata page was not committed either
-		bpm.setMetadata(1, -1)
+		bpm.initializeDbFile(1, -1)
 		bpm.Set(&n.Node{
 			Keys:    make([]string, 0),
 			Values:  make([]string, 0),
 			IsLeaf:  true,
-			PageNum: bpm.GetFreePage(),
+			PageNum: 1,
 		})
 	}
 
 	return bpm
 }
 
-func (bpm *BufferPoolManager) Checkpoint() bool {
+func (bpm *BufferPoolManager) Checkpoint() {
 	committedFrames := bpm.wal.RecoverAllCommittedFrames()
-	hadCommittedFrames := false
 	for frame := range committedFrames {
-		hadCommittedFrames = true
 		_, err := bpm.dbFile.WriteAt(frame.Data, frame.PageNum * c.PageSize)
 		if err != nil {
 			log.Fatalf("Failure writing dbFile")
 		}
 	}
 	bpm.wal.Clear()
-	return hadCommittedFrames
 }
 
 func (bpm *BufferPoolManager) SetRoot(pageNum int64) {
@@ -232,6 +230,8 @@ func (bpm *BufferPoolManager) setPage(pageNum int64, data []byte) {
 func (bpm *BufferPoolManager) DeletePage(pageNum int64) {
 	bpm.cache.Remove(pageNum)
 
+	log.Printf("Deleting page: %d\n", pageNum)
+
 	pageBytes := make([]byte, c.PageSize)
 	for idx, pageTypeByte := range util.Int16ToBytes(int16(FREE)) {
 		pageBytes[idx] = pageTypeByte
@@ -289,20 +289,29 @@ func (bpm *BufferPoolManager) GetFreePage() int64 {
 		return -1
 	} else {
 		bpm.freePageStart = util.BytesToInt64(pageBytes[c.PageTypeSize : c.PageTypeSize+c.PageRefSize])
-		log.Printf("Free page num: %d\n", freePageNum)
 		return freePageNum
 	}
 }
 
-func (bpm *BufferPoolManager) setMetadata(rootPage, freePageStart int64) {
-	metadataBytes := make([]byte, c.PageSize)
-	for idx, rootPageByte := range util.Int64ToBytes(rootPage) {
-		metadataBytes[idx] = rootPageByte
-	}
-	for idx, freePageStartByte := range util.Int64ToBytes(freePageStart) {
-		metadataBytes[idx+c.PageRefSize] = freePageStartByte
+func (bpm *BufferPoolManager) initializeDbFile(rootPage, freePageStart int64) {
+	metadataBytes := bpm.serializeMetadata(rootPage, freePageStart)
+	_, err := bpm.dbFile.WriteAt(metadataBytes, 0)
+	if err != nil {
+		log.Fatalf("Failure initializing metadata")
 	}
 
+	bpm.rootPageNum = rootPage
+	bpm.freePageStart = freePageStart
+
+	// create space for root node
+	_, err = bpm.dbFile.WriteAt(make([]byte, c.PageSize), c.PageSize)
+	if err != nil {
+		log.Fatalf("Failure initializing root node")
+	}
+}
+
+func (bpm *BufferPoolManager) setMetadata(rootPage, freePageStart int64) {
+	metadataBytes := bpm.serializeMetadata(rootPage, freePageStart)
 	bpm.setPage(0, metadataBytes)
 
 	bpm.rootPageNum = rootPage
@@ -314,4 +323,16 @@ func (bpm *BufferPoolManager) readMetadata() {
 
 	bpm.rootPageNum = util.BytesToInt64(metadataBytes[:c.PageRefSize])
 	bpm.freePageStart = util.BytesToInt64(metadataBytes[c.PageRefSize : 2*c.PageRefSize])
+}
+
+func (bpm *BufferPoolManager) serializeMetadata(rootPage, freePageStart int64) []byte {
+	metadataBytes := make([]byte, c.PageSize)
+	for idx, rootPageByte := range util.Int64ToBytes(rootPage) {
+		metadataBytes[idx] = rootPageByte
+	}
+	for idx, freePageStartByte := range util.Int64ToBytes(freePageStart) {
+		metadataBytes[idx+c.PageRefSize] = freePageStartByte
+	}
+
+	return metadataBytes
 }

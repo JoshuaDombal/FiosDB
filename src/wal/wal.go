@@ -2,10 +2,23 @@ package wal
 
 import (
 	"../constants"
-	"../util"
+	"../serializer"
 	"log"
 	"os"
 )
+
+// Commit frame structure
+// +--------------------------------+
+// + frameType (2 bytes)            +
+// +                                +
+// +--------------------------------+
+
+// Put frame structure
+// +--------------------------------+
+// + frameType (2 bytes)            +
+// + pageData (4096 bytes)          +
+// +                                +
+// +--------------------------------+
 
 type FrameType int16
 
@@ -58,12 +71,6 @@ func (wal *WAL) AddFrame(frame Frame) {
 		log.Fatalf("Failure writing frame")
 	}
 
-	err = wal.logFile.Sync()
-	if err != nil {
-		log.Fatalf("Failure syncing WAL")
-	}
-
-
 	if frame.FrameType == COMMIT {
 		// add all uncommitted transactions to the committed transactions
 		for pageNum, offset := range wal.uncommittedTxns {
@@ -88,7 +95,7 @@ func (wal *WAL) AddFrame(frame Frame) {
 
 // GetPage reads the page out of the WAL
 func (wal *WAL) GetPage(pageNum int64) ([]byte, bool) {
-	if offset, ok := wal.committedTxns[pageNum]; ok {
+	if offset, ok := wal.uncommittedTxns[pageNum]; ok {
 		buffer := make([]byte, c.PageSize)
 		_, err := wal.logFile.ReadAt(buffer, offset)
 		if err != nil {
@@ -98,7 +105,7 @@ func (wal *WAL) GetPage(pageNum int64) ([]byte, bool) {
 		return buffer, true
 	}
 
-	if offset, ok := wal.uncommittedTxns[pageNum]; ok {
+	if offset, ok := wal.committedTxns[pageNum]; ok {
 		buffer := make([]byte, c.PageSize)
 		_, err := wal.logFile.ReadAt(buffer, offset)
 		if err != nil {

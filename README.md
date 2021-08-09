@@ -4,21 +4,20 @@ The end goal is to have a fully distributed, fault tolerant and concurrent key v
 
 Phase 1: Single node key value store
 - Support CRUD operations
-- Allow multiple concurrent requests. Support atomic test and set
+- Allow multiple concurrent requests
 - Data is persisted to disk. Recovery from failure (data is reloaded from disk)
 - Cache pieces of index, record in memory for performance
 
-Phase 2: Single node key value store with replication
+Phase 2: Single partition key value store with replication
 - Still single partition but data will be replicated to multiple nodes to increase fault tolerance
 - Implement such that reads and writes could be routed to any of the nodes
-- Implement with each operation requiring consensus - both PAXOS and RAFT
+- Implement with each operation requiring consensus - PAXOS or RAFT
 - Implement with leader election where all requests are routed to the leader
 - Implement with offloading leader election to zookeeper
 
 Phase 3: Key value store with replication and partitioning
 - Implement multiple partitions where each partition is a replicated KV store
 - Implement repartitioning after adding and removing nodes (consistent hashing, rendezvous hashing)?
-
 
 Phase 4: Multitenant, partitioned, replicated key value store
 - Allow multiple different clients, each with access to only their own data

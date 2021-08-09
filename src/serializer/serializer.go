@@ -43,7 +43,7 @@ func ValueToBytes(value string) []byte {
 }
 
 func BytesToKey(keyAsBytes []byte) string {
-	idx := 0
+	idx := len(keyAsBytes)
 	for i, b := range keyAsBytes {
 		if b == 0 {
 			idx = i
@@ -54,7 +54,7 @@ func BytesToKey(keyAsBytes []byte) string {
 }
 
 func BytesToValue(valueAsBytes []byte) string {
-	idx := 0
+	idx := len(valueAsBytes)
 	for i, b := range valueAsBytes {
 		if b == 0 {
 			idx = i

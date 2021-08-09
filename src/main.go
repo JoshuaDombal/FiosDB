@@ -2,6 +2,7 @@ package main
 
 import (
 	"./bplustree"
+	c "./constants"
 	"encoding/json"
 	"github.com/gorilla/mux"
 	"io/ioutil"
@@ -9,7 +10,10 @@ import (
 	"net/http"
 )
 
-var bPlusTree = bplustree.New("./data/db", 3, 64)
+// numKeys*keySize + (numKeys + 1)*pageRefSize + pageTypeSize + keyCountSize <= pageSize, where capacity = numKeys
+const capacity = int((c.PageSize - c.PageTypeSize - c.KeyCountSize - c.KeySize) / (c.KeySize + c.PageRefSize))
+
+var bPlusTree = bplustree.New("./data/db", 3, 1)
 
 type SetRequest struct {
 	Key   string `json:"key"`
