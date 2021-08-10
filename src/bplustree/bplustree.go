@@ -3,6 +3,7 @@ package bplustree
 import (
 	"../bufferpoolmanager"
 	n "../node"
+	"log"
 	"sync"
 )
 
@@ -21,6 +22,46 @@ func New(fileName string, capacity, cacheSize int) BPlusTree {
 		root: bpm.GetRoot(),
 		capacity: capacity,
 		bpm:      bpm,
+	}
+}
+
+// ValidateTreeStructure is used for debugging. Traverses the tree and does some simple sanity checks
+func (t *BPlusTree) ValidateTreeStructure() {
+	t.rwLock.RLock()
+	defer t.rwLock.RUnlock()
+	t.validateTreeStructure("", "", t.root)
+}
+
+func (t *BPlusTree) validateTreeStructure(leftParentKey, rightParentKey string, node *n.Node) {
+	seenKey := map[string]bool{}
+	for _, key := range node.Keys {
+		if _, ok := seenKey[key]; ok {
+			log.Fatalf("Duplicate key")
+		}
+		seenKey[key] = true
+		if leftParentKey != "" {
+			if key < leftParentKey {
+				log.Fatalf("Bad structure")
+			}
+		}
+		if rightParentKey != "" {
+			if key >= rightParentKey {
+				log.Fatalf("Bad structure")
+			}
+		}
+	}
+	if !node.IsLeaf {
+		for idx, child := range node.Children {
+			lpk, rpk := "", ""
+			if idx > 0 {
+				lpk = node.Keys[idx - 1]
+			}
+			if idx < len(node.Children) - 1 {
+				rpk = node.Keys[idx]
+			}
+
+			t.validateTreeStructure(lpk, rpk, t.bpm.Get(child))
+		}
 	}
 }
 
@@ -87,9 +128,9 @@ func (t *BPlusTree) set(key string, value string, node *n.Node) (*n.Node, string
 		node.InsertKey(newKey, i)
 		node.InsertChild(newNode.PageNum, i+1)
 		if len(node.Keys) > t.capacity {
-			nn := n.NewInnerNode(t.bpm.GetFreePage(), node.Keys[len(node.Keys)/2+1:], node.Children[len(node.Children)/2+1:])
-			middleKey := node.Keys[len(node.Keys)/2]
 			nodeSize := len(node.Keys)
+			nn := n.NewInnerNode(t.bpm.GetFreePage(), node.Keys[nodeSize/2+1:], node.Children[nodeSize/2+1:])
+			middleKey := node.Keys[len(node.Keys)/2]
 			node.Keys = node.Keys[:nodeSize/2]
 			node.Children = node.Children[:nodeSize/2+1]
 			t.bpm.Set(node)
@@ -135,9 +176,17 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 				rightChild := t.bpm.Get(node.Children[i])
 				k, v, child := leftChild.RemoveMax()
 				if node.Keys[i-1] == key {
-					rightChild.AcceptMaxFromLeftChild(k, v, child)
+					minKey := k
+					if !rightChild.IsLeaf {
+						minKey = t.getMinKey(rightChild)
+					}
+					rightChild.AcceptMaxFromLeftChild(minKey, v, child)
 				} else {
-					rightChild.AcceptMaxFromLeftChild(node.Keys[i-1], v, child)
+					maxKey := k
+					if !rightChild.IsLeaf {
+						maxKey = node.Keys[i-1]
+					}
+					rightChild.AcceptMaxFromLeftChild(maxKey, v, child)
 				}
 				node.Keys[i-1] = k
 				t.bpm.Set(node)
@@ -146,8 +195,9 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 			} else if t.canBorrowFromRight(i, node) {
 				leftChild := t.bpm.Get(node.Children[i])
 				rightChild := t.bpm.Get(node.Children[i+1])
-				k, v, child := rightChild.RemoveMin()
-				leftChild.AcceptMinFromRightChild(k, v, child)
+				minKey := t.getMinKey(rightChild)
+				_, v, child := rightChild.RemoveMin()
+				leftChild.AcceptMinFromRightChild(minKey, v, child)
 				node.Keys[i] = t.getMinKey(rightChild)
 				t.bpm.Set(node)
 				t.bpm.Set(leftChild)

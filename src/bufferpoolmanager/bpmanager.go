@@ -289,6 +289,7 @@ func (bpm *BufferPoolManager) GetFreePage() int64 {
 		return -1
 	} else {
 		bpm.freePageStart = util.BytesToInt64(pageBytes[c.PageTypeSize : c.PageTypeSize+c.PageRefSize])
+		bpm.setMetadata(bpm.rootPageNum, bpm.freePageStart)
 		return freePageNum
 	}
 }

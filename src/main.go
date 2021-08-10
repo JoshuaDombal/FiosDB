@@ -12,8 +12,9 @@ import (
 
 // numKeys*keySize + (numKeys + 1)*pageRefSize + pageTypeSize + keyCountSize <= pageSize, where capacity = numKeys
 const capacity = int((c.PageSize - c.PageTypeSize - c.KeyCountSize - c.KeySize) / (c.KeySize + c.PageRefSize))
+const cacheSize = 64
 
-var bPlusTree = bplustree.New("./data/db", 3, 1)
+var bPlusTree = bplustree.New("./data/db", capacity, cacheSize)
 
 type SetRequest struct {
 	Key   string `json:"key"`
