@@ -1,4 +1,4 @@
-package node
+package bplustree
 
 // Node is a node in a b tree
 type Node struct {

@@ -1,7 +1,6 @@
-package util
+package bplustree
 
 import (
-	c "../constants"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -41,7 +40,7 @@ func TestKeySerializationAndDeserialization(t *testing.T) {
 	// Act/Assert
 	for _, key := range keys {
 		keySerialized := KeyToBytes(key)
-		assert.Equal(t, len(keySerialized), c.KeySize)
+		assert.Equal(t, len(keySerialized), KeySize)
 
 		keyDeserialized := BytesToKey(keySerialized)
 		assert.Equal(t, key, keyDeserialized)
@@ -55,7 +54,7 @@ func TestValueSerializationAndDeserialization(t *testing.T) {
 	// Act/Assert
 	for _, value := range values {
 		valueSerialized := ValueToBytes(value)
-		assert.Equal(t, len(valueSerialized), c.ValueSize)
+		assert.Equal(t, len(valueSerialized), ValueSize)
 
 		valueDeserialized := BytesToKey(valueSerialized)
 		assert.Equal(t, value, valueDeserialized)

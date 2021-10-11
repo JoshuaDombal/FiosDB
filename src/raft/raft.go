@@ -141,6 +141,7 @@ func NewRaft(id int, peerIds []int, idToPeerMap map[int]Peer, committedCommands 
 		heardFromLeaderChan: make(chan interface{}),
 		newCommitReadyChan:  make(chan interface{}),
 		commitChan:          make(chan Entry),
+		committedCommands:   committedCommands,
 	}
 
 	go func () {
@@ -156,7 +157,8 @@ func NewRaft(id int, peerIds []int, idToPeerMap map[int]Peer, committedCommands 
 	}()
 
 	// TODO: problems: channels are not broadcast, they are one to one so all the channels we have above
-	//   don't work like you might hope. Also we need to send successfully committed commands to the client commit chan
+	//   don't work like you might hope -- consider using condition variables. Also we need to send successfully committed
+	//   commands to the client commit chan
 	//   so that they can apply the command to their state machine
 
 	go raft.runElectionTimer()
@@ -285,7 +287,7 @@ func (r *Raft) startLeader() {
 			}
 		case <-r.submitChan:
 		case <-timer.C:
-			r.leaderSendHeartbeats()
+			r.sendAppendEntries()
 			timer.Reset(HeartbeatInterval)
 		}
 	}
@@ -373,7 +375,7 @@ func (r *Raft) startElection() {
 	r.runElectionTimer()
 }
 
-func (r *Raft) leaderSendHeartbeats() {
+func (r *Raft) sendAppendEntries() {
 	r.mu.Lock()
 	savedCurrentTerm := r.currentTerm
 	r.mu.Unlock()

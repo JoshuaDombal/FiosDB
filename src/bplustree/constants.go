@@ -1,4 +1,4 @@
-package c
+package bplustree
 
 
 // PageSize is the number of bytes in a page. A page is considered

@@ -1,8 +1,6 @@
-package wal
+package bplustree
 
 import (
-	"../constants"
-	"../serializer"
 	"log"
 	"os"
 )
@@ -38,7 +36,7 @@ type WAL struct {
 	uncommittedTxns map[int64]int64 // PageNum to Data offset in WAL
 }
 
-func New(fileName string) *WAL {
+func NewWAL(fileName string) *WAL {
 	needsRecovery := false
 	if fi, err := os.Stat(fileName); !os.IsNotExist(err) && fi.Size() > 0 {
 		needsRecovery = true
@@ -62,7 +60,7 @@ func (wal *WAL) NeedsRecovery() bool {
 
 // AddFrame adds the given frame to the end of the WAL
 func (wal *WAL) AddFrame(frame Frame) {
-	if frame.FrameType == PUT && len(frame.Data) != c.PageSize {
+	if frame.FrameType == PUT && len(frame.Data) != PageSize {
 		log.Fatalf("Page Data is different from page size")
 	}
 
@@ -89,14 +87,14 @@ func (wal *WAL) AddFrame(frame Frame) {
 		}
 
 		// add this to the uncommitted transactions
-		wal.uncommittedTxns[frame.PageNum] = offset - c.PageSize
+		wal.uncommittedTxns[frame.PageNum] = offset - PageSize
 	}
 }
 
 // GetPage reads the page out of the WAL
 func (wal *WAL) GetPage(pageNum int64) ([]byte, bool) {
 	if offset, ok := wal.uncommittedTxns[pageNum]; ok {
-		buffer := make([]byte, c.PageSize)
+		buffer := make([]byte, PageSize)
 		_, err := wal.logFile.ReadAt(buffer, offset)
 		if err != nil {
 			log.Fatalf("Failure reading frame")
@@ -106,7 +104,7 @@ func (wal *WAL) GetPage(pageNum int64) ([]byte, bool) {
 	}
 
 	if offset, ok := wal.committedTxns[pageNum]; ok {
-		buffer := make([]byte, c.PageSize)
+		buffer := make([]byte, PageSize)
 		_, err := wal.logFile.ReadAt(buffer, offset)
 		if err != nil {
 			log.Fatalf("Failure reading frame")
@@ -181,27 +179,27 @@ func (wal *WAL) Clear() {
 // reads a single frame starting at offset
 // returns the frame and the number of bytes read
 func (wal *WAL) readFrame(offset int64) (*Frame, int64) {
-	buffer := make([]byte, c.FrameTypeSize)
+	buffer := make([]byte, FrameTypeSize)
 	_, err := wal.logFile.ReadAt(buffer, offset)
 	if err != nil {
 		log.Fatalf("Reading frame failed")
 	}
-	frameType := FrameType(util.BytesToInt16(buffer))
+	frameType := FrameType(BytesToInt16(buffer))
 	if frameType == COMMIT {
 		return &Frame{
 			FrameType: frameType,
-		}, c.FrameTypeSize
+		}, FrameTypeSize
 	} else if frameType == PUT {
 
-		buffer = make([]byte, c.PageRefSize)
-		_, err = wal.logFile.ReadAt(buffer, offset+c.FrameTypeSize)
+		buffer = make([]byte, PageRefSize)
+		_, err = wal.logFile.ReadAt(buffer, offset+FrameTypeSize)
 		if err != nil {
 			log.Fatalf("Reading frame failed")
 		}
-		pageNumber := util.BytesToInt64(buffer)
+		pageNumber := BytesToInt64(buffer)
 
-		data := make([]byte, c.PageSize)
-		_, err = wal.logFile.ReadAt(data, offset+c.FrameTypeSize+c.PageRefSize)
+		data := make([]byte, PageSize)
+		_, err = wal.logFile.ReadAt(data, offset+FrameTypeSize+PageRefSize)
 		if err != nil {
 			log.Fatalf("Reading frame failed")
 		}
@@ -210,7 +208,7 @@ func (wal *WAL) readFrame(offset int64) (*Frame, int64) {
 			FrameType: frameType,
 			PageNum:   pageNumber,
 			Data:      data,
-		}, c.FrameTypeSize + c.PageRefSize + c.PageSize
+		}, FrameTypeSize + PageRefSize + PageSize
 	}
 
 	log.Fatalf("Unrecognized frame type: %d", frameType)
@@ -219,10 +217,10 @@ func (wal *WAL) readFrame(offset int64) (*Frame, int64) {
 
 func (wal *WAL) serializeFrame(f *Frame) []byte {
 	buf := make([]byte, 0)
-	buf = append(buf, util.Int16ToBytes(int16(f.FrameType))...)
+	buf = append(buf, Int16ToBytes(int16(f.FrameType))...)
 
 	if f.FrameType != 1 {
-		buf = append(buf, util.Int64ToBytes(f.PageNum)...)
+		buf = append(buf, Int64ToBytes(f.PageNum)...)
 		buf = append(buf, f.Data...)
 	}
 	return buf

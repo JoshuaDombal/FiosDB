@@ -1,7 +1,6 @@
-package util
+package bplustree
 
 import (
-	c "../constants"
 	"encoding/binary"
 	"fmt"
 )
@@ -27,7 +26,7 @@ func BytesToInt16(buf []byte) int16 {
 }
 
 func KeyToBytes(key string) []byte {
-	keyAsBytes := make([]byte, c.KeySize)
+	keyAsBytes := make([]byte, KeySize)
 	for idx, keyByte := range []byte(key) {
 		keyAsBytes[idx] = keyByte
 	}
@@ -35,7 +34,7 @@ func KeyToBytes(key string) []byte {
 }
 
 func ValueToBytes(value string) []byte {
-	valueAsBytes := make([]byte, c.ValueSize)
+	valueAsBytes := make([]byte, ValueSize)
 	for idx, keyByte := range []byte(value) {
 		valueAsBytes[idx] = keyByte
 	}

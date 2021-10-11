@@ -1,27 +1,59 @@
 package bplustree
 
 import (
-	"../bufferpoolmanager"
-	n "../node"
+	"fmt"
 	"log"
 	"sync"
 )
 
+// DefaultCapacity numKeys*keySize + (numKeys + 1)*pageRefSize + pageTypeSize + keyCountSize <= pageSize, where capacity = numKeys
+const DefaultCapacity = int((PageSize - PageTypeSize - KeyCountSize - KeySize) / (KeySize + PageRefSize))
+
 // BPlusTree Implementation of a right biased b+ tree
 type BPlusTree struct {
 	rwLock   *sync.RWMutex
-	root     *n.Node
+	root     *Node
 	capacity int
-	bpm      *bufferpoolmanager.BufferPoolManager
+	bpm      *BufferPoolManager
 }
 
-func New(fileName string, capacity, cacheSize int) BPlusTree {
-	bpm := bufferpoolmanager.New(fileName, cacheSize)
+func NewBPlusTree(fileName string, cacheSize int, capacity int) BPlusTree {
+	bpm := NewBPM(fileName, cacheSize)
+	if capacity < 0 {
+		capacity = DefaultCapacity
+	}
 	return BPlusTree{
 		rwLock: &sync.RWMutex{},
 		root: bpm.GetRoot(),
 		capacity: capacity,
 		bpm:      bpm,
+	}
+}
+
+func (t *BPlusTree) PrintTree() {
+	t.rwLock.RLock()
+	defer t.rwLock.RUnlock()
+	printLayers := make(map[int][][]string)
+	t.printTree(t.root, printLayers, 0)
+	for i := 0;;i++ {
+		if _, ok := printLayers[i]; !ok {
+			fmt.Println()
+			return
+		}
+		fmt.Println(fmt.Sprintf("%v", printLayers[i]))
+	}
+}
+
+func (t *BPlusTree) printTree(node *Node, printLayers map[int][][]string, layer int) {
+	if _, ok := printLayers[layer]; !ok {
+		printLayers[layer] = make([][]string, 0)
+	}
+	printLayers[layer] = append(printLayers[layer], node.Keys)
+
+	if !node.IsLeaf {
+		for _, child := range node.Children {
+			t.printTree(t.bpm.Get(child), printLayers, layer + 1)
+		}
 	}
 }
 
@@ -32,8 +64,22 @@ func (t *BPlusTree) ValidateTreeStructure() {
 	t.validateTreeStructure("", "", t.root)
 }
 
-func (t *BPlusTree) validateTreeStructure(leftParentKey, rightParentKey string, node *n.Node) {
+func (t *BPlusTree) validateTreeStructure(leftParentKey, rightParentKey string, node *Node) {
+	if len(node.Keys) > t.capacity {
+		log.Fatalf("More keys than configured capacity")
+	}
+	if node != t.root && len(node.Keys) < t.capacity / 2 {
+		log.Fatalf("Non root nodes must have at least capacity / 2 keys")
+	}
+	if node.IsLeaf && len(node.Keys) != len(node.Values) {
+		log.Fatalf("Leaf nodes must have same number of keys as values")
+	}
+	if !node.IsLeaf && len(node.Keys) + 1 != len(node.Children) {
+		log.Fatalf("internal nodes must have (num keys + 1) children")
+	}
+
 	seenKey := map[string]bool{}
+	lastKey := ""
 	for _, key := range node.Keys {
 		if _, ok := seenKey[key]; ok {
 			log.Fatalf("Duplicate key")
@@ -41,14 +87,18 @@ func (t *BPlusTree) validateTreeStructure(leftParentKey, rightParentKey string, 
 		seenKey[key] = true
 		if leftParentKey != "" {
 			if key < leftParentKey {
-				log.Fatalf("Bad structure")
+				log.Fatalf("Keys in left children must be less than the parent key")
 			}
 		}
 		if rightParentKey != "" {
 			if key >= rightParentKey {
-				log.Fatalf("Bad structure")
+				log.Fatalf("Keys in right children must be greater than or equal to the parent key")
 			}
 		}
+		if lastKey != "" && lastKey > key {
+			log.Fatalf("Keys must be sorted")
+		}
+		lastKey = key
 	}
 	if !node.IsLeaf {
 		for idx, child := range node.Children {
@@ -71,7 +121,7 @@ func (t *BPlusTree) Get(key string) (string, bool) {
 	return t.get(key, t.root)
 }
 
-func (t *BPlusTree) get(key string, node *n.Node) (string, bool) {
+func (t *BPlusTree) get(key string, node *Node) (string, bool) {
 	if node.IsLeaf {
 		i, keyExists := findKeyIndexInLeaf(key, node.Keys)
 		if keyExists {
@@ -90,7 +140,7 @@ func (t *BPlusTree) Set(key, value string) {
 	defer t.rwLock.Unlock()
 	newNode, newKey, didSplit := t.set(key, value, t.root)
 	if didSplit {
-		newRoot := n.NewInnerNode(t.bpm.GetFreePage(), []string{newKey}, []int64{t.root.PageNum, newNode.PageNum})
+		newRoot := NewInnerNode(t.bpm.GetFreePage(), []string{newKey}, []int64{t.root.PageNum, newNode.PageNum})
 		t.root = newRoot
 		t.bpm.Set(t.root)
 		t.bpm.SetRoot(t.root.PageNum)
@@ -98,7 +148,7 @@ func (t *BPlusTree) Set(key, value string) {
 	t.bpm.Commit()
 }
 
-func (t *BPlusTree) set(key string, value string, node *n.Node) (*n.Node, string, bool) {
+func (t *BPlusTree) set(key string, value string, node *Node) (*Node, string, bool) {
 	if node.IsLeaf {
 		i, found := findKeyIndexInLeaf(key, node.Keys)
 		if found {
@@ -109,7 +159,7 @@ func (t *BPlusTree) set(key string, value string, node *n.Node) (*n.Node, string
 			node.InsertKey(key, i)
 			node.InsertValue(value, i)
 			if len(node.Keys) > t.capacity {
-				nn := n.NewLeafNode(t.bpm.GetFreePage(), node.Keys[len(node.Keys)/2:], node.Values[len(node.Values)/2:])
+				nn := NewLeafNode(t.bpm.GetFreePage(), node.Keys[len(node.Keys)/2:], node.Values[len(node.Values)/2:])
 				node.Keys = node.Keys[:len(node.Keys)/2]
 				node.Values = node.Values[:len(node.Values)/2]
 				t.bpm.Set(node)
@@ -129,7 +179,7 @@ func (t *BPlusTree) set(key string, value string, node *n.Node) (*n.Node, string
 		node.InsertChild(newNode.PageNum, i+1)
 		if len(node.Keys) > t.capacity {
 			nodeSize := len(node.Keys)
-			nn := n.NewInnerNode(t.bpm.GetFreePage(), node.Keys[nodeSize/2+1:], node.Children[nodeSize/2+1:])
+			nn := NewInnerNode(t.bpm.GetFreePage(), node.Keys[nodeSize/2+1:], node.Children[nodeSize/2+1:])
 			middleKey := node.Keys[len(node.Keys)/2]
 			node.Keys = node.Keys[:nodeSize/2]
 			node.Children = node.Children[:nodeSize/2+1]
@@ -143,22 +193,26 @@ func (t *BPlusTree) set(key string, value string, node *n.Node) (*n.Node, string
 	}
 }
 
-func (t *BPlusTree) Delete(key string) {
+func (t *BPlusTree) Delete(key string) map[int]bool {
+	casesHit := make(map[int]bool)
 	t.rwLock.Lock()
 	defer t.rwLock.Unlock()
-	underCapacity := t.delete(key, t.root)
-	if underCapacity && !t.root.IsLeaf {
+	_ = t.delete(key, t.root, casesHit)
+	if len(t.root.Keys) == 0 && !t.root.IsLeaf {
+		casesHit[1]= true
 		oldRootPageNumber := t.root.PageNum
 		t.root = t.bpm.Get(t.root.Children[0])
 		t.bpm.DeletePage(oldRootPageNumber)
 		t.bpm.SetRoot(t.root.PageNum)
 	}
 	t.bpm.Commit()
+	return casesHit
 }
 
 // returns whether nodes are underCapacity
-func (t *BPlusTree) delete(key string, node *n.Node) bool {
+func (t *BPlusTree) delete(key string, node *Node, casesHit map[int]bool) bool {
 	if node.IsLeaf {
+		casesHit[2] = true
 		i, found := findKeyIndexInLeaf(key, node.Keys)
 		if !found {
 			return false
@@ -169,7 +223,7 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 		return len(node.Keys) < t.capacity/2
 	} else {
 		i := findChildPointerIndex(key, node.Keys)
-		childUnderCapacity := t.delete(key, t.bpm.Get(node.Children[i]))
+		childUnderCapacity := t.delete(key, t.bpm.Get(node.Children[i]), casesHit)
 		if childUnderCapacity {
 			if t.canBorrowFromLeft(i, node) {
 				leftChild := t.bpm.Get(node.Children[i-1])
@@ -178,13 +232,19 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 				if node.Keys[i-1] == key {
 					minKey := k
 					if !rightChild.IsLeaf {
+						casesHit[3] = true
 						minKey = t.getMinKey(rightChild)
+					} else {
+						casesHit[4] = true
 					}
 					rightChild.AcceptMaxFromLeftChild(minKey, v, child)
 				} else {
 					maxKey := k
 					if !rightChild.IsLeaf {
+						casesHit[5] = true
 						maxKey = node.Keys[i-1]
+					} else {
+						casesHit[6] = true
 					}
 					rightChild.AcceptMaxFromLeftChild(maxKey, v, child)
 				}
@@ -193,6 +253,7 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 				t.bpm.Set(leftChild)
 				t.bpm.Set(rightChild)
 			} else if t.canBorrowFromRight(i, node) {
+				casesHit[7] = true
 				leftChild := t.bpm.Get(node.Children[i])
 				rightChild := t.bpm.Get(node.Children[i+1])
 				minKey := t.getMinKey(rightChild)
@@ -206,9 +267,11 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 				leftChild := t.bpm.Get(node.Children[i-1])
 				rightChild := t.bpm.Get(node.Children[i])
 				if leftChild.IsLeaf {
+					casesHit[8] = true
 					leftChild.Keys = append(leftChild.Keys, rightChild.Keys...)
 					leftChild.Values = append(leftChild.Values, rightChild.Values...)
 				} else {
+					casesHit[9] = true
 					leftChild.Keys = append(append(leftChild.Keys, t.getMinKey(rightChild)), rightChild.Keys...)
 					leftChild.Children = append(leftChild.Children, rightChild.Children...)
 				}
@@ -221,9 +284,11 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 				leftChild := t.bpm.Get(node.Children[i])
 				rightChild := t.bpm.Get(node.Children[i+1])
 				if leftChild.IsLeaf {
+					casesHit[10] = true
 					leftChild.Keys = append(leftChild.Keys, rightChild.Keys...)
 					leftChild.Values = append(leftChild.Values, rightChild.Values...)
 				} else {
+					casesHit[11] = true
 					leftChild.Keys = append(append(leftChild.Keys, t.getMinKey(rightChild)), rightChild.Keys...)
 					leftChild.Children = append(leftChild.Children, rightChild.Children...)
 				}
@@ -234,6 +299,7 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 				t.bpm.DeletePage(rightChild.PageNum)
 			}
 		} else if i > 0 && node.Keys[i-1] == key {
+			casesHit[12] = true
 			node.Keys[i-1] = t.getMinKey(t.bpm.Get(node.Children[i]))
 			t.bpm.Set(node)
 		}
@@ -242,11 +308,11 @@ func (t *BPlusTree) delete(key string, node *n.Node) bool {
 	}
 }
 
-func (t *BPlusTree) canBorrowFromLeft(i int, node *n.Node) bool {
+func (t *BPlusTree) canBorrowFromLeft(i int, node *Node) bool {
 	return i > 0 && t.bpm.Get(node.Children[i-1]).CanLend(t.capacity)
 }
 
-func (t *BPlusTree) canBorrowFromRight(i int, node *n.Node) bool {
+func (t *BPlusTree) canBorrowFromRight(i int, node *Node) bool {
 	return i < len(node.Children)-1 && t.bpm.Get(node.Children[i+1]).CanLend(t.capacity)
 }
 
@@ -254,7 +320,7 @@ func (t *BPlusTree) canMergeWithLeft(i int) bool {
 	return i > 0
 }
 
-func (t *BPlusTree) getMinKey(n *n.Node) string {
+func (t *BPlusTree) getMinKey(n *Node) string {
 	if n.IsLeaf {
 		return n.Keys[0]
 	} else {

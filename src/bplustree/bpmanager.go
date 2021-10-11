@@ -1,10 +1,6 @@
-package bufferpoolmanager
+package bplustree
 
 import (
-	c "../constants"
-	n "../node"
-	"../serializer"
-	writeAheadLog "../wal"
 	"github.com/hashicorp/golang-lru"
 	"io"
 	"log"
@@ -52,17 +48,17 @@ const FREE PageType = 3
 type BufferPoolManager struct {
 	cache         *lru.Cache
 	dbFile        *os.File
-	wal           *writeAheadLog.WAL
+	wal           *WAL
 	rootPageNum   int64
 	freePageStart int64
 }
 
-func New(fileName string, cacheSize int) *BufferPoolManager {
+func NewBPM(fileName string, cacheSize int) *BufferPoolManager {
 	dbFile, err := os.OpenFile(fileName + ".db", os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		log.Fatalf("Failure opening file")
 	}
-	wal := writeAheadLog.New(fileName + ".log")
+	wal := NewWAL(fileName + ".log")
 	cache, err := lru.New(cacheSize)
 	if err != nil {
 		log.Fatalf("Failure creating LRU cache")
@@ -80,13 +76,13 @@ func New(fileName string, cacheSize int) *BufferPoolManager {
 		log.Printf("finished checkpointing")
 	}
 
-	if fi, _ := bpm.dbFile.Stat(); fi.Size() > c.PageSize {
+	if fi, _ := bpm.dbFile.Stat(); fi.Size() > PageSize {
 		// Successful initialization requires setting up both the metadata page and the root page. This seems like a bit
 		// of a hack. maybe we can clean this up
 		bpm.readMetadata()
 	} else {
 		bpm.initializeDbFile(1, -1)
-		bpm.Set(&n.Node{
+		bpm.Set(&Node{
 			Keys:    make([]string, 0),
 			Values:  make([]string, 0),
 			IsLeaf:  true,
@@ -100,7 +96,7 @@ func New(fileName string, cacheSize int) *BufferPoolManager {
 func (bpm *BufferPoolManager) Checkpoint() {
 	committedFrames := bpm.wal.RecoverAllCommittedFrames()
 	for frame := range committedFrames {
-		_, err := bpm.dbFile.WriteAt(frame.Data, frame.PageNum * c.PageSize)
+		_, err := bpm.dbFile.WriteAt(frame.Data, frame.PageNum * PageSize)
 		if err != nil {
 			log.Fatalf("Failure writing dbFile")
 		}
@@ -112,35 +108,35 @@ func (bpm *BufferPoolManager) SetRoot(pageNum int64) {
 	bpm.setMetadata(pageNum, bpm.freePageStart)
 }
 
-func (bpm *BufferPoolManager) GetRoot() *n.Node {
+func (bpm *BufferPoolManager) GetRoot() *Node {
 	return bpm.Get(bpm.rootPageNum)
 }
 
-func (bpm *BufferPoolManager) Get(pageNum int64) *n.Node {
+func (bpm *BufferPoolManager) Get(pageNum int64) *Node {
 	nodeBytes := bpm.getPage(pageNum)
-	pageType := PageType(util.BytesToInt16(nodeBytes[:c.PageTypeSize]))
+	pageType := PageType(BytesToInt16(nodeBytes[:PageTypeSize]))
 	if pageType != INTERNAL && pageType != LEAF {
 		log.Fatalf("Page is not a leaf or internal node")
 	}
 
-	numKeys := util.BytesToInt16(nodeBytes[c.PageTypeSize : c.PageTypeSize+c.KeyCountSize])
+	numKeys := BytesToInt16(nodeBytes[PageTypeSize : PageTypeSize+KeyCountSize])
 
 	keys := make([]string, numKeys)
-	keyBytes := nodeBytes[c.PageTypeSize+c.KeyCountSize : c.PageTypeSize+c.KeyCountSize+c.KeySize*numKeys]
+	keyBytes := nodeBytes[PageTypeSize+KeyCountSize : PageTypeSize+KeyCountSize+KeySize*numKeys]
 	var i int16
 	for i = 0; i < numKeys; i++ {
-		keys[i] = util.BytesToKey(keyBytes[c.KeySize*i : c.KeySize*(i+1)])
+		keys[i] = BytesToKey(keyBytes[KeySize*i : KeySize*(i+1)])
 	}
 
 	if pageType == INTERNAL {
 		children := make([]int64, numKeys+1)
-		childrenBytes := nodeBytes[c.PageTypeSize+c.KeyCountSize+c.KeySize*numKeys : c.PageTypeSize+c.KeyCountSize+c.KeySize*numKeys+c.PageRefSize*(1+numKeys)]
+		childrenBytes := nodeBytes[PageTypeSize+KeyCountSize+KeySize*numKeys : PageTypeSize+KeyCountSize+KeySize*numKeys+PageRefSize*(1+numKeys)]
 		var i int16
 		for i = 0; i < numKeys+1; i++ {
-			children[i] = util.BytesToInt64(childrenBytes[c.KeySize*i : c.KeySize*(i+1)])
+			children[i] = BytesToInt64(childrenBytes[KeySize*i : KeySize*(i+1)])
 		}
 
-		return &n.Node{
+		return &Node{
 			Keys:     keys,
 			Children: children,
 			PageNum:  pageNum,
@@ -148,13 +144,13 @@ func (bpm *BufferPoolManager) Get(pageNum int64) *n.Node {
 		}
 	} else {
 		values := make([]string, numKeys)
-		valueBytes := nodeBytes[c.PageTypeSize+c.KeyCountSize+c.KeySize*numKeys : c.PageTypeSize+c.KeyCountSize+c.KeySize*numKeys+c.ValueSize*numKeys]
+		valueBytes := nodeBytes[PageTypeSize+KeyCountSize+KeySize*numKeys : PageTypeSize+KeyCountSize+KeySize*numKeys+ValueSize*numKeys]
 		var i int16
 		for i = 0; i < numKeys; i++ {
-			values[i] = util.BytesToValue(valueBytes[c.ValueSize*i : c.ValueSize*(i+1)])
+			values[i] = BytesToValue(valueBytes[ValueSize*i : ValueSize*(i+1)])
 		}
 
-		return &n.Node{
+		return &Node{
 			Keys:    keys,
 			Values:  values,
 			PageNum: pageNum,
@@ -177,8 +173,8 @@ func (bpm *BufferPoolManager) getPage(pageNum int64) []byte {
 	}
 
 	// read from disk
-	buffer = make([]byte, c.PageSize)
-	_, err := bpm.dbFile.ReadAt(buffer, pageNum*c.PageSize)
+	buffer = make([]byte, PageSize)
+	_, err := bpm.dbFile.ReadAt(buffer, pageNum*PageSize)
 	if err != nil {
 		log.Fatalf("Failed to read page")
 	}
@@ -186,7 +182,7 @@ func (bpm *BufferPoolManager) getPage(pageNum int64) []byte {
 	return buffer
 }
 
-func (bpm *BufferPoolManager) Set(node *n.Node) {
+func (bpm *BufferPoolManager) Set(node *Node) {
 	data := make([]byte, 0)
 
 	var pageType PageType
@@ -196,30 +192,30 @@ func (bpm *BufferPoolManager) Set(node *n.Node) {
 		pageType = INTERNAL
 	}
 
-	data = append(data, util.Int16ToBytes(int16(pageType))...)
-	data = append(data, util.Int16ToBytes(int16(len(node.Keys)))...)
+	data = append(data, Int16ToBytes(int16(pageType))...)
+	data = append(data, Int16ToBytes(int16(len(node.Keys)))...)
 	for _, key := range node.Keys {
-		data = append(data, util.KeyToBytes(key)...)
+		data = append(data, KeyToBytes(key)...)
 	}
 
 	if node.IsLeaf {
 		for _, value := range node.Values {
-			data = append(data, util.ValueToBytes(value)...)
+			data = append(data, ValueToBytes(value)...)
 		}
 	} else {
 		for _, child := range node.Children {
-			data = append(data, util.Int64ToBytes(child)...)
+			data = append(data, Int64ToBytes(child)...)
 		}
 	}
 
-	data = append(data, make([]byte, c.PageSize - len(data))...)
+	data = append(data, make([]byte, PageSize - len(data))...)
 
 	bpm.setPage(node.PageNum, data)
 }
 
 func (bpm *BufferPoolManager) setPage(pageNum int64, data []byte) {
-	bpm.wal.AddFrame(writeAheadLog.Frame{
-		FrameType: writeAheadLog.PUT,
+	bpm.wal.AddFrame(Frame{
+		FrameType: PUT,
 		PageNum:   pageNum,
 		Data:      data,
 	})
@@ -230,18 +226,16 @@ func (bpm *BufferPoolManager) setPage(pageNum int64, data []byte) {
 func (bpm *BufferPoolManager) DeletePage(pageNum int64) {
 	bpm.cache.Remove(pageNum)
 
-	log.Printf("Deleting page: %d\n", pageNum)
-
-	pageBytes := make([]byte, c.PageSize)
-	for idx, pageTypeByte := range util.Int16ToBytes(int16(FREE)) {
+	pageBytes := make([]byte, PageSize)
+	for idx, pageTypeByte := range Int16ToBytes(int16(FREE)) {
 		pageBytes[idx] = pageTypeByte
 	}
-	for idx, nextPageByte := range util.Int64ToBytes(bpm.freePageStart) {
-		pageBytes[idx+c.PageTypeSize] = nextPageByte
+	for idx, nextPageByte := range Int64ToBytes(bpm.freePageStart) {
+		pageBytes[idx+PageTypeSize] = nextPageByte
 	}
 
-	bpm.wal.AddFrame(writeAheadLog.Frame{
-		FrameType: writeAheadLog.PUT,
+	bpm.wal.AddFrame(Frame{
+		FrameType: PUT,
 		PageNum:   pageNum,
 		Data: pageBytes,
 	})
@@ -250,8 +244,8 @@ func (bpm *BufferPoolManager) DeletePage(pageNum int64) {
 }
 
 func (bpm *BufferPoolManager) Commit() {
-	bpm.wal.AddFrame(writeAheadLog.Frame{
-		FrameType: writeAheadLog.COMMIT,
+	bpm.wal.AddFrame(Frame{
+		FrameType: COMMIT,
 	})
 }
 
@@ -263,32 +257,32 @@ func (bpm *BufferPoolManager) GetFreePage() int64 {
 		}
 		if offset == 0 {
 			// extend the file
-			_, err = bpm.dbFile.Write(make([]byte, c.PageSize))
+			_, err = bpm.dbFile.Write(make([]byte, PageSize))
 			if err != nil {
 				log.Fatalf("Extending file failed")
 			}
-			offset += c.PageSize
+			offset += PageSize
 		}
- 		if offset%c.PageSize != 0 {
+ 		if offset%PageSize != 0 {
 			log.Fatalf("DBFile size is not a multiple of page size")
 		}
 		// extend the file
-		_, err = bpm.dbFile.Write(make([]byte, c.PageSize))
+		_, err = bpm.dbFile.Write(make([]byte, PageSize))
 		if err != nil {
 			log.Fatalf("Extending file failed")
 		}
 
-		return offset / c.PageSize
+		return offset / PageSize
 	}
 
 	freePageNum := bpm.freePageStart
 	pageBytes := bpm.getPage(freePageNum)
-	pageType := PageType(util.BytesToInt16(pageBytes[:c.PageTypeSize]))
+	pageType := PageType(BytesToInt16(pageBytes[:PageTypeSize]))
 	if pageType != FREE {
 		log.Fatalf("Page is not free")
 		return -1
 	} else {
-		bpm.freePageStart = util.BytesToInt64(pageBytes[c.PageTypeSize : c.PageTypeSize+c.PageRefSize])
+		bpm.freePageStart = BytesToInt64(pageBytes[PageTypeSize : PageTypeSize+PageRefSize])
 		bpm.setMetadata(bpm.rootPageNum, bpm.freePageStart)
 		return freePageNum
 	}
@@ -305,7 +299,7 @@ func (bpm *BufferPoolManager) initializeDbFile(rootPage, freePageStart int64) {
 	bpm.freePageStart = freePageStart
 
 	// create space for root node
-	_, err = bpm.dbFile.WriteAt(make([]byte, c.PageSize), c.PageSize)
+	_, err = bpm.dbFile.WriteAt(make([]byte, PageSize), PageSize)
 	if err != nil {
 		log.Fatalf("Failure initializing root node")
 	}
@@ -322,17 +316,17 @@ func (bpm *BufferPoolManager) setMetadata(rootPage, freePageStart int64) {
 func (bpm *BufferPoolManager) readMetadata() {
 	metadataBytes := bpm.getPage(0)
 
-	bpm.rootPageNum = util.BytesToInt64(metadataBytes[:c.PageRefSize])
-	bpm.freePageStart = util.BytesToInt64(metadataBytes[c.PageRefSize : 2*c.PageRefSize])
+	bpm.rootPageNum = BytesToInt64(metadataBytes[:PageRefSize])
+	bpm.freePageStart = BytesToInt64(metadataBytes[PageRefSize : 2*PageRefSize])
 }
 
 func (bpm *BufferPoolManager) serializeMetadata(rootPage, freePageStart int64) []byte {
-	metadataBytes := make([]byte, c.PageSize)
-	for idx, rootPageByte := range util.Int64ToBytes(rootPage) {
+	metadataBytes := make([]byte, PageSize)
+	for idx, rootPageByte := range Int64ToBytes(rootPage) {
 		metadataBytes[idx] = rootPageByte
 	}
-	for idx, freePageStartByte := range util.Int64ToBytes(freePageStart) {
-		metadataBytes[idx+c.PageRefSize] = freePageStartByte
+	for idx, freePageStartByte := range Int64ToBytes(freePageStart) {
+		metadataBytes[idx+PageRefSize] = freePageStartByte
 	}
 
 	return metadataBytes
