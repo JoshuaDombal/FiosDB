@@ -193,26 +193,22 @@ func (t *BPlusTree) set(key string, value string, node *Node) (*Node, string, bo
 	}
 }
 
-func (t *BPlusTree) Delete(key string) map[int]bool {
-	casesHit := make(map[int]bool)
+func (t *BPlusTree) Delete(key string) {
 	t.rwLock.Lock()
 	defer t.rwLock.Unlock()
-	_ = t.delete(key, t.root, casesHit)
+	_ = t.delete(key, t.root)
 	if len(t.root.Keys) == 0 && !t.root.IsLeaf {
-		casesHit[1]= true
 		oldRootPageNumber := t.root.PageNum
 		t.root = t.bpm.Get(t.root.Children[0])
 		t.bpm.DeletePage(oldRootPageNumber)
 		t.bpm.SetRoot(t.root.PageNum)
 	}
 	t.bpm.Commit()
-	return casesHit
 }
 
 // returns whether nodes are underCapacity
-func (t *BPlusTree) delete(key string, node *Node, casesHit map[int]bool) bool {
+func (t *BPlusTree) delete(key string, node *Node) bool {
 	if node.IsLeaf {
-		casesHit[2] = true
 		i, found := findKeyIndexInLeaf(key, node.Keys)
 		if !found {
 			return false
@@ -223,7 +219,7 @@ func (t *BPlusTree) delete(key string, node *Node, casesHit map[int]bool) bool {
 		return len(node.Keys) < t.capacity/2
 	} else {
 		i := findChildPointerIndex(key, node.Keys)
-		childUnderCapacity := t.delete(key, t.bpm.Get(node.Children[i]), casesHit)
+		childUnderCapacity := t.delete(key, t.bpm.Get(node.Children[i]))
 		if childUnderCapacity {
 			if t.canBorrowFromLeft(i, node) {
 				leftChild := t.bpm.Get(node.Children[i-1])
@@ -232,19 +228,13 @@ func (t *BPlusTree) delete(key string, node *Node, casesHit map[int]bool) bool {
 				if node.Keys[i-1] == key {
 					minKey := k
 					if !rightChild.IsLeaf {
-						casesHit[3] = true
 						minKey = t.getMinKey(rightChild)
-					} else {
-						casesHit[4] = true
 					}
 					rightChild.AcceptMaxFromLeftChild(minKey, v, child)
 				} else {
 					maxKey := k
 					if !rightChild.IsLeaf {
-						casesHit[5] = true
 						maxKey = node.Keys[i-1]
-					} else {
-						casesHit[6] = true
 					}
 					rightChild.AcceptMaxFromLeftChild(maxKey, v, child)
 				}
@@ -253,7 +243,6 @@ func (t *BPlusTree) delete(key string, node *Node, casesHit map[int]bool) bool {
 				t.bpm.Set(leftChild)
 				t.bpm.Set(rightChild)
 			} else if t.canBorrowFromRight(i, node) {
-				casesHit[7] = true
 				leftChild := t.bpm.Get(node.Children[i])
 				rightChild := t.bpm.Get(node.Children[i+1])
 				minKey := t.getMinKey(rightChild)
@@ -267,11 +256,9 @@ func (t *BPlusTree) delete(key string, node *Node, casesHit map[int]bool) bool {
 				leftChild := t.bpm.Get(node.Children[i-1])
 				rightChild := t.bpm.Get(node.Children[i])
 				if leftChild.IsLeaf {
-					casesHit[8] = true
 					leftChild.Keys = append(leftChild.Keys, rightChild.Keys...)
 					leftChild.Values = append(leftChild.Values, rightChild.Values...)
 				} else {
-					casesHit[9] = true
 					leftChild.Keys = append(append(leftChild.Keys, t.getMinKey(rightChild)), rightChild.Keys...)
 					leftChild.Children = append(leftChild.Children, rightChild.Children...)
 				}
@@ -284,11 +271,9 @@ func (t *BPlusTree) delete(key string, node *Node, casesHit map[int]bool) bool {
 				leftChild := t.bpm.Get(node.Children[i])
 				rightChild := t.bpm.Get(node.Children[i+1])
 				if leftChild.IsLeaf {
-					casesHit[10] = true
 					leftChild.Keys = append(leftChild.Keys, rightChild.Keys...)
 					leftChild.Values = append(leftChild.Values, rightChild.Values...)
 				} else {
-					casesHit[11] = true
 					leftChild.Keys = append(append(leftChild.Keys, t.getMinKey(rightChild)), rightChild.Keys...)
 					leftChild.Children = append(leftChild.Children, rightChild.Children...)
 				}
@@ -299,7 +284,6 @@ func (t *BPlusTree) delete(key string, node *Node, casesHit map[int]bool) bool {
 				t.bpm.DeletePage(rightChild.PageNum)
 			}
 		} else if i > 0 && node.Keys[i-1] == key {
-			casesHit[12] = true
 			node.Keys[i-1] = t.getMinKey(t.bpm.Get(node.Children[i]))
 			t.bpm.Set(node)
 		}
