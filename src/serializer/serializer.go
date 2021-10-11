@@ -35,7 +35,7 @@ func KeyToBytes(key string) []byte {
 }
 
 func ValueToBytes(value string) []byte {
-	valueAsBytes := make([]byte, c.KeySize)
+	valueAsBytes := make([]byte, c.ValueSize)
 	for idx, keyByte := range []byte(value) {
 		valueAsBytes[idx] = keyByte
 	}
@@ -43,23 +43,20 @@ func ValueToBytes(value string) []byte {
 }
 
 func BytesToKey(keyAsBytes []byte) string {
-	idx := len(keyAsBytes)
-	for i, b := range keyAsBytes {
-		if b == 0 {
-			idx = i
-			break
-		}
-	}
-	return fmt.Sprintf("%s", keyAsBytes[:idx])
+	return fixedLengthBytesToString(keyAsBytes)
 }
 
 func BytesToValue(valueAsBytes []byte) string {
-	idx := len(valueAsBytes)
-	for i, b := range valueAsBytes {
+	return fixedLengthBytesToString(valueAsBytes)
+}
+
+func fixedLengthBytesToString(bytes []byte) string {
+	idx := len(bytes)
+	for i, b := range bytes {
 		if b == 0 {
 			idx = i
 			break
 		}
 	}
-	return fmt.Sprintf("%s", valueAsBytes[:idx])
+	return fmt.Sprintf("%s", bytes[:idx])
 }

@@ -23,9 +23,9 @@ type SetRequest struct {
 
 func main() {
 	r := mux.NewRouter()
-	r.HandleFunc("/{key}", Get).Methods("GET")
-	r.HandleFunc("/", Set).Methods("POST")
-	r.HandleFunc("/{key}", Delete).Methods("DELETE")
+	r.HandleFunc("/{key}", Get).Methods(http.MethodGet)
+	r.HandleFunc("/", Set).Methods(http.MethodPost)
+	r.HandleFunc("/{key}", Delete).Methods(http.MethodDelete)
 
 	log.Fatal(http.ListenAndServe(":8080", r))
 }

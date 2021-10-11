@@ -1,5 +1,6 @@
 package node
 
+// Node is a node in a b tree
 type Node struct {
 	Keys     []string // Keys of nodes
 	Values   []string // values
