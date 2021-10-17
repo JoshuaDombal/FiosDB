@@ -11,6 +11,8 @@ import (
 )
 
 
+// TODO: what is written here is more of a skeleton of how we could do it. Should we explore something like gRPC? Or
+//    how can we avoid creating/re-creating tcp/tls connections
 type RPC struct {
 	serverPort  int
 	idToPeerMap map[int]Peer

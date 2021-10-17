@@ -4,7 +4,7 @@ type Log struct {
 
 }
 
-
+// TODO: implement and can we make this generic enough to be used in the bplustree?
 func NewLog() *Log {
 	return &Log{}
 }
