@@ -16,6 +16,9 @@ type Pair struct {
 	value string
 }
 
+func init() {
+	_ = os.RemoveAll(TestDir)
+}
 
 func TestOddCapacityLargeCache(t *testing.T) {
 	// Arrange

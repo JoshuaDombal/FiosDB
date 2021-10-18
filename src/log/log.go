@@ -1,10 +1,12 @@
 package log
 
 import (
+	"errors"
 	"log"
 	"os"
 )
 
+// A Log provides the basic abstraction of a log.
 type Log struct {
 	index *index
 	store *store
@@ -32,9 +34,17 @@ func (l *Log) Append(data []byte) int64 {
 	return l.index.Append(storeOffset)
 }
 
-func (l *Log) Read(offset int64) []byte {
+func (l *Log) Read(offset int64) ([]byte, error) {
+	if offset >= l.Size() {
+		return []byte{}, errors.New("read is beyond the end of the log")
+	}
 	storeOffset := l.index.Read(offset)
-	return l.store.Read(storeOffset)
+	return l.store.Read(storeOffset), nil
+}
+
+func (l *Log) Write(data []byte, offset int64) {
+	storeOffset := l.store.Append(data)
+	l.index.Write(offset, storeOffset)
 }
 
 func (l *Log) Size() int64 {

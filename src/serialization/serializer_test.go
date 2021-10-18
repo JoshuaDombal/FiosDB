@@ -1,6 +1,7 @@
-package bplustree
+package serialization
 
 import (
+	"fios-db/src/bplustree"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -33,30 +34,16 @@ func TestInt16SerializationAndDeserialization(t *testing.T) {
 	}
 }
 
-func TestKeySerializationAndDeserialization(t *testing.T) {
+func TestStringSerializationAndDeserialization(t *testing.T) {
 	// Arrange
 	var keys = []string{"alpha", "123123", "!#$*(@"}
 
 	// Act/Assert
 	for _, key := range keys {
-		keySerialized := KeyToBytes(key)
-		assert.Equal(t, len(keySerialized), KeySize)
+		keySerialized := StringToBytes(key, 8)
+		assert.Equal(t, len(keySerialized), bplustree.KeySize)
 
-		keyDeserialized := BytesToKey(keySerialized)
+		keyDeserialized := FixedLengthBytesToString(keySerialized)
 		assert.Equal(t, key, keyDeserialized)
-	}
-}
-
-func TestValueSerializationAndDeserialization(t *testing.T) {
-	// Arrange
-	var values = []string{"", "alpha", "123123", "!#$*(@"}
-
-	// Act/Assert
-	for _, value := range values {
-		valueSerialized := ValueToBytes(value)
-		assert.Equal(t, len(valueSerialized), ValueSize)
-
-		valueDeserialized := BytesToKey(valueSerialized)
-		assert.Equal(t, value, valueDeserialized)
 	}
 }

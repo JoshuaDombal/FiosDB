@@ -18,9 +18,9 @@ type Peer struct {
 }
 
 type Entry struct {
-	Command interface{} `json:"command"`
+	Command []byte `json:"command"`
 	Term    int         `json:"term"`
-	Index   int         `json:"index"`
+	Index   int64         `json:"index"`
 }
 
 type AppendEntriesRequestWrapper struct {
@@ -36,8 +36,8 @@ type RequestVoteRequestWrapper struct {
 type AppendEntriesRequest struct {
 	Id          int     `json:"id"`
 	Term        int     `json:"term"`
-	CommitIdx   int     `json:"commitIdx"`
-	PrevLogIdx  int     `json:"prevLogIdx"`
+	CommitIdx   int64     `json:"commitIdx"`
+	PrevLogIdx  int64     `json:"prevLogIdx"`
 	PrevLogTerm int     `json:"prevLogTerm"`
 	Entries     []Entry `json:"entries"`
 }
@@ -50,7 +50,7 @@ type AppendEntriesResponse struct {
 type RequestVoteRequest struct {
 	Term         int `json:"term"`
 	Id           int `json:"id"`
-	LastLogIndex int `json:"lastLogIndex"`
+	LastLogIndex int64 `json:"lastLogIndex"`
 	LastLogTerm  int `json:"lastLogTerm"`
 }
 
@@ -91,15 +91,15 @@ type Raft struct {
 	peerIds     []int
 	state       State
 
-	commitIdx      int
-	lastAppliedIdx int
+	commitIdx      int64
+	lastAppliedIdx int64
 
 	// contains the index at which we are certain the peer's log matches our log up to
-	matchIdx map[int]int
+	matchIdx map[int]int64
 	// next location where we think the peer matches. This and matchIndex are needed as when we become a leader
 	// we set the matchIdx for each peer to -1 while nextIndex stays, this allows us to work backward from the end to
 	// learn the match index
-	nextIdx map[int]int
+	nextIdx map[int]int64
 
 	log *Log
 	rpc *RPC
@@ -118,10 +118,10 @@ type Raft struct {
 	commitChan chan Entry
 
 	// client supplied channel to send command which have been committed
-	committedCommands chan interface{}
+	committedCommands chan []byte
 }
 
-func NewRaft(id int, peerIds []int, idToPeerMap map[int]Peer, committedCommands chan interface{}) *Raft {
+func NewRaft(id int, peerIds []int, idToPeerMap map[int]Peer, committedCommands chan []byte, logFileName string) *Raft {
 	raft := &Raft{
 		mu:                  sync.Mutex{},
 		currentTerm:         0,
@@ -131,9 +131,9 @@ func NewRaft(id int, peerIds []int, idToPeerMap map[int]Peer, committedCommands 
 		state:               Follower,
 		commitIdx:           -1,
 		lastAppliedIdx:      -1,
-		matchIdx:            make(map[int]int),
-		nextIdx:             make(map[int]int),
-		log:                 NewLog(),
+		matchIdx:            make(map[int]int64),
+		nextIdx:             make(map[int]int64),
+		log:                 NewLog(logFileName),
 		rpc:                 NewRPC(id, idToPeerMap),
 		submitChan:          make(chan interface{}),
 		termChangeChan:      make(chan interface{}),
@@ -165,7 +165,7 @@ func NewRaft(id int, peerIds []int, idToPeerMap map[int]Peer, committedCommands 
 	return raft
 }
 
-func (r *Raft) Submit(command interface{}) bool {
+func (r *Raft) Submit(command []byte) bool {
 	// Only the leader can accept submit commands. Client will need to retry with another node
 	if r.state != Leader {
 		return false
@@ -410,15 +410,15 @@ func (r *Raft) sendAppendEntries() {
 			}
 
 			if response.Success {
-				r.nextIdx[peerId] = nextIdx + len(entries)
+				r.nextIdx[peerId] = nextIdx + int64(len(entries))
 				r.matchIdx[peerId] = r.nextIdx[peerId] - 1
 
 				// check if any log entries now have a majority
-				matchIndices := make([]int, 0)
+				matchIndices := make([]int64, 0)
 				for _, matchIdx := range r.matchIdx {
 					matchIndices = append(matchIndices, matchIdx)
 				}
-				sort.Ints(matchIndices)
+				sort.Slice(matchIndices, func(i, j int) bool { return matchIndices[i] < matchIndices[j] })
 				largestIdxWithMajority := matchIndices[len(matchIndices)/2+1]
 				if largestIdxWithMajority > r.commitIdx {
 					r.newCommitReadyChan <- struct{}{}

@@ -1,7 +1,7 @@
 package log
 
 import (
-	"encoding/binary"
+	"fios-db/src/serialization"
 	"log"
 	"os"
 	"sync"
@@ -32,10 +32,9 @@ func (s *store) Append(data []byte) int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var buf = make([]byte, recordLenFieldWidthInBytes)
-	binary.LittleEndian.PutUint64(buf, uint64(len(data)))
+	_, _ = s.file.Seek(0, 2)
 
-	_, err := s.file.Write(buf)
+	_, err := s.file.Write(serialization.Int64ToBytes(int64(len(data))))
 	if err != nil {
 		log.Fatalf("Failure writing length of record")
 	}
@@ -57,7 +56,7 @@ func (s *store) Read(offset int64) []byte {
 		log.Fatalf("Failure reading length of record")
 	}
 
-	recordLen := int64(binary.LittleEndian.Uint64(recordLenBytes))
+	recordLen := serialization.BytesToInt64(recordLenBytes)
 	data := make([]byte, recordLen)
 	_, err = s.file.ReadAt(data, offset + recordLenFieldWidthInBytes)
 	if err != nil {

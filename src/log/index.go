@@ -2,6 +2,7 @@ package log
 
 import (
 	"encoding/binary"
+	"fios-db/src/serialization"
 	"log"
 	"os"
 )
@@ -28,10 +29,9 @@ func newIndex(file *os.File) *index {
 
 // Append Appends the store offset to the index file and returns the record index
 func (i *index) Append(storeOffset int64) int64 {
-	var buf = make([]byte, storeOffsetFieldWidthInBytes)
-	binary.LittleEndian.PutUint64(buf, uint64(storeOffset))
+	_, _ = i.file.Seek(0, 2)
 
-	_, err := i.file.Write(buf)
+	_, err := i.file.Write(serialization.Int64ToBytes(storeOffset))
 	if err != nil {
 		log.Fatalf("Failure writing length of record")
 	}
@@ -51,6 +51,13 @@ func (i *index) Read(offset int64) int64 {
 	}
 
 	return int64(binary.LittleEndian.Uint64(recordLenBytes))
+}
+
+func (i *index) Write(offset int64, storeOffset int64) {
+	_, err := i.file.WriteAt(serialization.Int64ToBytes(storeOffset), offset * storeOffsetFieldWidthInBytes)
+	if err != nil {
+		log.Fatalf("Failure overwriting length of record")
+	}
 }
 
 func (i *index) Flush() {

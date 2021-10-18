@@ -46,8 +46,26 @@ func TestRead(t *testing.T) {
 	assert.Equal(t, int64(0), offset1)
 	assert.Equal(t, int64(1), offset2)
 	assert.Equal(t, int64(2), l.Size())
-	assert.Equal(t, data1, l.Read(0))
-	assert.Equal(t, data2, l.Read(1))
+	data1Actual, _ := l.Read(0)
+	assert.Equal(t, data1, data1Actual)
+	data2Actual, _ := l.Read(1)
+	assert.Equal(t, data2, data2Actual)
+}
+
+func TestWrite(t *testing.T) {
+	// Arrange
+	_ = os.Mkdir(TestDir, 0755)
+	l := NewLog(TestFile)
+	defer func() {_ = os.RemoveAll(TestDir)}()
+	data1 := []byte("Hello world")
+	data2 := []byte("Goodbye world")
+	_ = l.Append(data1)
+
+	// Act/Assert
+	l.Write(data2, 0)
+	assert.Equal(t, int64(1), l.Size())
+	data1Actual, _ := l.Read(0)
+	assert.Equal(t, data2, data1Actual)
 }
 
 func TestCreateLogAfterCrash(t *testing.T) {
@@ -99,6 +117,25 @@ func TestReadAfterCrash(t *testing.T) {
 	assert.Equal(t, int64(0), offset1)
 	assert.Equal(t, int64(1), offset2)
 	assert.Equal(t, int64(2), l2.Size())
-	assert.Equal(t, data1, l2.Read(0))
-	assert.Equal(t, data2, l2.Read(1))
+	data1Actual, _ := l2.Read(0)
+	assert.Equal(t, data1, data1Actual)
+	data2Actual, _ := l2.Read(1)
+	assert.Equal(t, data2, data2Actual)
+}
+
+func TestWriteAfterCrash(t *testing.T) {
+	// Arrange
+	_ = os.Mkdir(TestDir, 0755)
+	l1 := NewLog(TestFile)
+	defer func() {_ = os.RemoveAll(TestDir)}()
+	data1 := []byte("Hello world")
+	data2 := []byte("Goodbye world")
+	_ = l1.Append(data1)
+
+	// Act/Assert
+	l2 := NewLog(TestFile)
+	l2.Write(data2, 0)
+	assert.Equal(t, int64(1), l2.Size())
+	data1Actual, _ := l2.Read(0)
+	assert.Equal(t, data2, data1Actual)
 }

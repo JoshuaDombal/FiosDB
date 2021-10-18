@@ -1,6 +1,7 @@
 package bplustree
 
 import (
+	"fios-db/src/serialization"
 	"github.com/hashicorp/golang-lru"
 	"io"
 	"log"
@@ -58,7 +59,7 @@ func NewBPM(fileName string, cacheSize int) *BufferPoolManager {
 	if err != nil {
 		log.Fatalf("Failure opening file")
 	}
-	wal := NewWAL(fileName + ".log")
+	wal := NewWAL(fileName)
 	cache, err := lru.New(cacheSize)
 	if err != nil {
 		log.Fatalf("Failure creating LRU cache")
@@ -70,11 +71,7 @@ func NewBPM(fileName string, cacheSize int) *BufferPoolManager {
 		wal:    wal,
 	}
 
-	if wal.NeedsRecovery() {
-		log.Printf("checkpointing...")
-		bpm.Checkpoint()
-		log.Printf("finished checkpointing")
-	}
+	bpm.Recover()
 
 	if fi, _ := bpm.dbFile.Stat(); fi.Size() > PageSize {
 		// Successful initialization requires setting up both the metadata page and the root page. This seems like a bit
@@ -93,15 +90,14 @@ func NewBPM(fileName string, cacheSize int) *BufferPoolManager {
 	return bpm
 }
 
-func (bpm *BufferPoolManager) Checkpoint() {
-	committedFrames := bpm.wal.RecoverAllCommittedFrames()
+func (bpm *BufferPoolManager) Recover() {
+	committedFrames := bpm.wal.ReadAllCommittedFrames()
 	for frame := range committedFrames {
 		_, err := bpm.dbFile.WriteAt(frame.Data, frame.PageNum * PageSize)
 		if err != nil {
 			log.Fatalf("Failure writing dbFile")
 		}
 	}
-	bpm.wal.Clear()
 }
 
 func (bpm *BufferPoolManager) SetRoot(pageNum int64) {
@@ -114,18 +110,18 @@ func (bpm *BufferPoolManager) GetRoot() *Node {
 
 func (bpm *BufferPoolManager) Get(pageNum int64) *Node {
 	nodeBytes := bpm.getPage(pageNum)
-	pageType := PageType(BytesToInt16(nodeBytes[:PageTypeSize]))
+	pageType := PageType(serialization.BytesToInt16(nodeBytes[:PageTypeSize]))
 	if pageType != INTERNAL && pageType != LEAF {
 		log.Fatalf("Page is not a leaf or internal node")
 	}
 
-	numKeys := BytesToInt16(nodeBytes[PageTypeSize : PageTypeSize+KeyCountSize])
+	numKeys := serialization.BytesToInt16(nodeBytes[PageTypeSize : PageTypeSize+KeyCountSize])
 
 	keys := make([]string, numKeys)
 	keyBytes := nodeBytes[PageTypeSize+KeyCountSize : PageTypeSize+KeyCountSize+KeySize*numKeys]
 	var i int16
 	for i = 0; i < numKeys; i++ {
-		keys[i] = BytesToKey(keyBytes[KeySize*i : KeySize*(i+1)])
+		keys[i] = serialization.FixedLengthBytesToString(keyBytes[KeySize*i : KeySize*(i+1)])
 	}
 
 	if pageType == INTERNAL {
@@ -133,7 +129,7 @@ func (bpm *BufferPoolManager) Get(pageNum int64) *Node {
 		childrenBytes := nodeBytes[PageTypeSize+KeyCountSize+KeySize*numKeys : PageTypeSize+KeyCountSize+KeySize*numKeys+PageRefSize*(1+numKeys)]
 		var i int16
 		for i = 0; i < numKeys+1; i++ {
-			children[i] = BytesToInt64(childrenBytes[KeySize*i : KeySize*(i+1)])
+			children[i] = serialization.BytesToInt64(childrenBytes[KeySize*i : KeySize*(i+1)])
 		}
 
 		return &Node{
@@ -147,7 +143,7 @@ func (bpm *BufferPoolManager) Get(pageNum int64) *Node {
 		valueBytes := nodeBytes[PageTypeSize+KeyCountSize+KeySize*numKeys : PageTypeSize+KeyCountSize+KeySize*numKeys+ValueSize*numKeys]
 		var i int16
 		for i = 0; i < numKeys; i++ {
-			values[i] = BytesToValue(valueBytes[ValueSize*i : ValueSize*(i+1)])
+			values[i] = serialization.FixedLengthBytesToString(valueBytes[ValueSize*i : ValueSize*(i+1)])
 		}
 
 		return &Node{
@@ -167,7 +163,7 @@ func (bpm *BufferPoolManager) getPage(pageNum int64) []byte {
 	}
 
 	// check the WAL
-	buffer, ok := bpm.wal.GetPage(pageNum)
+	buffer, ok := bpm.wal.Read(pageNum)
 	if ok {
 		return buffer
 	}
@@ -192,19 +188,19 @@ func (bpm *BufferPoolManager) Set(node *Node) {
 		pageType = INTERNAL
 	}
 
-	data = append(data, Int16ToBytes(int16(pageType))...)
-	data = append(data, Int16ToBytes(int16(len(node.Keys)))...)
+	data = append(data, serialization.Int16ToBytes(int16(pageType))...)
+	data = append(data, serialization.Int16ToBytes(int16(len(node.Keys)))...)
 	for _, key := range node.Keys {
-		data = append(data, KeyToBytes(key)...)
+		data = append(data, serialization.StringToBytes(key, KeySize)...)
 	}
 
 	if node.IsLeaf {
 		for _, value := range node.Values {
-			data = append(data, ValueToBytes(value)...)
+			data = append(data, serialization.StringToBytes(value, ValueSize)...)
 		}
 	} else {
 		for _, child := range node.Children {
-			data = append(data, Int64ToBytes(child)...)
+			data = append(data, serialization.Int64ToBytes(child)...)
 		}
 	}
 
@@ -214,7 +210,7 @@ func (bpm *BufferPoolManager) Set(node *Node) {
 }
 
 func (bpm *BufferPoolManager) setPage(pageNum int64, data []byte) {
-	bpm.wal.AddFrame(Frame{
+	bpm.wal.Append(Frame{
 		FrameType: PUT,
 		PageNum:   pageNum,
 		Data:      data,
@@ -227,14 +223,14 @@ func (bpm *BufferPoolManager) DeletePage(pageNum int64) {
 	bpm.cache.Remove(pageNum)
 
 	pageBytes := make([]byte, PageSize)
-	for idx, pageTypeByte := range Int16ToBytes(int16(FREE)) {
+	for idx, pageTypeByte := range serialization.Int16ToBytes(int16(FREE)) {
 		pageBytes[idx] = pageTypeByte
 	}
-	for idx, nextPageByte := range Int64ToBytes(bpm.freePageStart) {
+	for idx, nextPageByte := range serialization.Int64ToBytes(bpm.freePageStart) {
 		pageBytes[idx+PageTypeSize] = nextPageByte
 	}
 
-	bpm.wal.AddFrame(Frame{
+	bpm.wal.Append(Frame{
 		FrameType: PUT,
 		PageNum:   pageNum,
 		Data: pageBytes,
@@ -244,7 +240,7 @@ func (bpm *BufferPoolManager) DeletePage(pageNum int64) {
 }
 
 func (bpm *BufferPoolManager) Commit() {
-	bpm.wal.AddFrame(Frame{
+	bpm.wal.Append(Frame{
 		FrameType: COMMIT,
 	})
 }
@@ -277,12 +273,12 @@ func (bpm *BufferPoolManager) GetFreePage() int64 {
 
 	freePageNum := bpm.freePageStart
 	pageBytes := bpm.getPage(freePageNum)
-	pageType := PageType(BytesToInt16(pageBytes[:PageTypeSize]))
+	pageType := PageType(serialization.BytesToInt16(pageBytes[:PageTypeSize]))
 	if pageType != FREE {
 		log.Fatalf("Page is not free")
 		return -1
 	} else {
-		bpm.freePageStart = BytesToInt64(pageBytes[PageTypeSize : PageTypeSize+PageRefSize])
+		bpm.freePageStart = serialization.BytesToInt64(pageBytes[PageTypeSize : PageTypeSize+PageRefSize])
 		bpm.setMetadata(bpm.rootPageNum, bpm.freePageStart)
 		return freePageNum
 	}
@@ -316,16 +312,16 @@ func (bpm *BufferPoolManager) setMetadata(rootPage, freePageStart int64) {
 func (bpm *BufferPoolManager) readMetadata() {
 	metadataBytes := bpm.getPage(0)
 
-	bpm.rootPageNum = BytesToInt64(metadataBytes[:PageRefSize])
-	bpm.freePageStart = BytesToInt64(metadataBytes[PageRefSize : 2*PageRefSize])
+	bpm.rootPageNum = serialization.BytesToInt64(metadataBytes[:PageRefSize])
+	bpm.freePageStart = serialization.BytesToInt64(metadataBytes[PageRefSize : 2*PageRefSize])
 }
 
 func (bpm *BufferPoolManager) serializeMetadata(rootPage, freePageStart int64) []byte {
 	metadataBytes := make([]byte, PageSize)
-	for idx, rootPageByte := range Int64ToBytes(rootPage) {
+	for idx, rootPageByte := range serialization.Int64ToBytes(rootPage) {
 		metadataBytes[idx] = rootPageByte
 	}
-	for idx, freePageStartByte := range Int64ToBytes(freePageStart) {
+	for idx, freePageStartByte := range serialization.Int64ToBytes(freePageStart) {
 		metadataBytes[idx+PageRefSize] = freePageStartByte
 	}
 
